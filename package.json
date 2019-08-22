@@ -13,6 +13,7 @@
     "babel-plugin-component": "^1.1.1",
     "buefy": "^0.8.2",
     "bulma": "^0.7.1",
+    "chroma-js": "^2.0.4",
     "lodash": "^4.17.10",
     "moment": "^2.22.2",
     "moment-duration-format": "^2.2.2",
