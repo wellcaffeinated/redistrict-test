@@ -1,0 +1,19 @@
+;
+// Common
+@import "./_variables";
+@import "~bulma/sass/utilities/initial-variables";
+@import "~buefy/src/scss/utils/_all";
+@import "~bulma/bulma";
+@import "~buefy/src/scss/buefy";
+
+* > * {
+  box-sizing: border-box;
+}
+html {
+  height: 100%;
+}
+body {
+  min-height: 100%;
+  background: $background;
+  margin: 0;
+}
