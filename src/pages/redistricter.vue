@@ -1,13 +1,19 @@
 <template lang="pug">
 .wrap
-  b-field(grouped)
-    b-field
-      b-button(@click="run", :loading="working") Run
-    b-field
-      b-button(@click="step", :loading="working") Step
   .canvas
     canvas(ref="regionCanvas", width="500", height="500")
     canvas(ref="canvas", width="500", height="500")
+  .controls
+    p District Max Population Difference: {{ populationPercentDiff }}%
+    br/
+    b-field(grouped, v-if="!isDone")
+      b-field
+        b-button(@click="run", :loading="working") Run One Iteration
+      b-field
+        b-button(@click="step", :loading="working") Step
+    b-field(grouped, v-if="isDone")
+      b-field
+        b-button(@click="adjustSeedPositions", :loading="working") Adjust Seed Positions
 </template>
 
 <script>
@@ -15,6 +21,7 @@ import _times from 'lodash/times'
 import createWorker from '@/workers/main'
 
 const worker = createWorker()
+const drawWorker = new createWorker()
 
 export default {
   name: 'Redistricter'
@@ -24,10 +31,12 @@ export default {
   }
   , data: () => ({
     working: false
+    , seedPositions: []
     , redistricter: null
+    , isDone: false
+    , populationPercentDiff: 0
   })
   , mounted(){
-    this.working = true
     this.initRedistricter().then(() => {
       return this.drawRegions()
     }).catch(e => {
@@ -37,9 +46,13 @@ export default {
     })
   }
   , watch: {
+    seedPositions(){
+      this.drawRegions()
+    }
   }
   , methods: {
     async initRedistricter(){
+      this.working = true
       const canvas = this.$refs.canvas
       const width = canvas.width
       const height = canvas.height
@@ -51,31 +64,52 @@ export default {
         , height
       })
 
+      this.seedPositions = await this.redistricter.getSeedPositions()
+
       await this.draw()
+      this.populationPercentDiff = await this.redistricter.getMaxPopulationDifferencePercentage()
+      this.working = false
     }
     , async drawRegions(){
+      this.working = true
       const canvas = this.$refs.regionCanvas
       const ctx = canvas.getContext('2d')
       const width = canvas.width
       const height = canvas.height
-      let regionData = await worker.getImageData(canvas.width, canvas.height, await this.redistricter.getSeedPositions())
+      let regionData = await drawWorker.getImageData(canvas.width, canvas.height, this.seedPositions)
       ctx.putImageData(regionData, 0, 0)
+      this.working = false
     }
     , async draw(){
+      this.working = true
       const canvas = this.$refs.canvas
       const ctx = canvas.getContext('2d')
 
       let data = await this.redistricter.getImageData()
       ctx.putImageData(data, 0, 0)
+      this.working = false
     }
     , async run(){
+      this.working = true
       while ( !await this.redistricter.isDone() ){
         this.step()
       }
+      this.working = false
     }
     , async step(){
       await this.redistricter.step()
       await this.draw()
+      this.isDone = await this.redistricter.isDone()
+    }
+    , async adjustSeedPositions(){
+      this.working = true
+      await this.redistricter.adjustSeedPositions()
+      await this.redistricter.restart()
+      this.seedPositions = await this.redistricter.getSeedPositions()
+      await this.draw()
+      this.populationPercentDiff = await this.redistricter.getMaxPopulationDifferencePercentage()
+      this.isDone = false
+      this.working = false
     }
   }
 }
@@ -92,4 +126,8 @@ canvas
     position: absolute
     top: 0
     left: 0
+    z-index: 0
+  canvas:last-child
+    position: relative
+    z-index: 1
 </style>

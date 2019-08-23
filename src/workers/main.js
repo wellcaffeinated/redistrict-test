@@ -15,6 +15,26 @@ function indexWithLowestValue( arr ){
   return lowestIndex
 }
 
+function getCentroid( coords = [], weights ){
+  let x = 0
+  let y = 0
+  let l = coords.length
+  let totalWeight = 1
+
+  for (let i = 0; i < l; i++){
+    let w = weights ? weights[i] : 1
+    let p = coords[i]
+    x += p.x
+    y += p.y
+    totalWeight += w
+  }
+
+  x /= l
+  y /= l
+
+  return {x, y}
+}
+
 function distanceSq(p, q){
   let x = p.x - q.x
   let y = p.y - q.y
@@ -52,8 +72,8 @@ function scale(min, max, z){
 
 function drawRegion( ctx, region, color ){
   const l = region.length
-  let min = region[0].phi
-  let max = region[l - 1].phi
+  let min = _.minBy(region, 'phi').phi
+  let max = _.maxBy(region, 'phi').phi
   let colorScale = chroma.scale([
     color.darken(2)
     , color.darken(2).desaturate(2)
@@ -89,15 +109,16 @@ function draw(ctx, seeds = []){
       let index = _.indexOf(seeds, nearest)
       let region = regions[index]
       let entry = { p, phi }
-      let eidx  = _.sortedIndexBy(region, entry, 'phi')
-      region.splice(eidx, 0, entry)
+      // let eidx  = _.sortedIndexBy(region, entry, 'phi')
+      // region.splice(eidx, 0, entry)
+      region.push(entry)
     }
   }
 
   regions.forEach( (r, i) => drawRegion(ctx, r, colors[i]) )
 
   seeds.forEach( s => {
-    drawCircle(ctx, s, 5, 'red')
+    drawCircle(ctx, s, 5, 'white')
   })
 }
 
@@ -142,21 +163,37 @@ export class Redistricter {
   constructor({ blockCount, seedCount, width, height }){
     this.width = width
     this.height = height
-    this.totalPopulation = 0
     this.blocks = getRandomCensusBlocks(blockCount, width, height)
     this.seedPositions = getRandomPoints(seedCount, width, height)
+    this.colors = colorScale.colors(seedCount, 'rgba')
+
+    this.restart()
+  }
+
+  restart(){
+    this.totalPopulation = 0
     this.blocks.forEach( b => {
       let K = _.sumBy(this.seedPositions, s => distanceSq(b.position, s))
       b.phiByDistrict = _.map(this.seedPositions, p => {
         return calcPhi(b.position, p, K)
       })
+      b.isTaken = false
       this.totalPopulation += b.population
     })
-
-    this.colors = colorScale.colors(seedCount, 'rgba')
     this.blocksTaken = 0
-
     this.initDistricts()
+  }
+
+  adjustSeedPositions(){
+    this.seedPositions = this.districts.map( (district, i) => {
+      let coords = []
+      let weights = []
+      district.taken.forEach((b, i) => {
+        coords.push(b.position)
+        weights.push(b.phiByDistrict[i])
+      })
+      return getCentroid(coords)
+    })
   }
 
   getSeedPositions(){
@@ -167,7 +204,6 @@ export class Redistricter {
     let pos = this.seedPositions[index]
     let blocksInRegion = []
     _.forEach(this.blocks, b => {
-      if ( !b.phiByDistrict ){ console.log(b)}
       let i = indexWithLowestValue(b.phiByDistrict)
       if ( i === index ){
         // in region
@@ -191,9 +227,12 @@ export class Redistricter {
     let remainder = this.totalPopulation % len
     this.districts = this.seedPositions.map( (position, i) => {
       let isLast = (i === len - 1)
+      let blocksInRegion = this.getBlocksInRegion( i )
+      let regionPopulation = _.sumBy(blocksInRegion, 'block.population')
       return {
         position
-        , blocksInRegion: this.getBlocksInRegion( i )
+        , blocksInRegion
+        , regionPopulation
         , population: 0
         // FIXME naiive...
         , targetPopulation: Math.floor(targetPopulation) + (isLast ? remainder : 0)
@@ -261,6 +300,13 @@ export class Redistricter {
     })
   }
 
+  getMaxPopulationDifferencePercentage(){
+    let min = _.minBy(this.districts, 'regionPopulation').regionPopulation
+    let max = _.maxBy(this.districts, 'regionPopulation').regionPopulation
+
+    return 100 * (max - min) / (0.5 * (max + min))
+  }
+
   getImageData(){
     const width = this.width
     const height = this.height
@@ -274,7 +320,7 @@ export class Redistricter {
       drawCircle(ctx, b.position, 1, 'white')
     })
 
-    console.log(`There are ${untaken} blocks left`, this.districts)
+    // console.log(`There are ${untaken} blocks left`, this.districts)
 
     this.districts.forEach((district, i) => {
       let color = this.colors[i].css()
