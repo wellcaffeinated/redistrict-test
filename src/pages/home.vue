@@ -22,7 +22,6 @@ export default {
     , seeds: []
   })
   , mounted(){
-
   }
   , watch: {
     seeds(){
