@@ -3,6 +3,10 @@ import _ from 'lodash'
 import chroma from 'chroma-js'
 const colorScale = chroma.scale('Paired')
 
+function lerp(a, b, t) {
+  return a * (1 - t) + b * t
+}
+
 function indexWithLowestValue( arr ){
   let lowestIndex = -1
   let lowestValue
@@ -61,9 +65,11 @@ function getNearestSeed(p, seeds = []){
   return _.minBy(seeds, s => distance(p, s))
 }
 
-function calcPhi(p, seed, K){
+function calcPhi(p, seed, K, weight ){
   let d2 = distanceSq(p, seed)
-  return d2 + Math.sqrt(d2) - K
+  return d2 + Math.sqrt(d2) - K * (1 + weight)
+  // return d2 - K * (1 + weight)
+  // return d2 + Math.sqrt(d2) * (1 + weight)
 }
 
 function scale(min, max, z){
@@ -103,10 +109,9 @@ function draw(ctx, seeds = []){
     for (let x = 0; x < width; x++){
       let p = {x, y}
       let K = _.sumBy(seeds, s => distanceSq(p, s))
-
-      let nearest = _.minBy(seeds, s => calcPhi(p, s, K))
-      let phi = calcPhi(p, nearest, K)
+      let nearest = _.minBy(seeds, s => calcPhi(p, s, K, s.weight))
       let index = _.indexOf(seeds, nearest)
+      let phi = calcPhi(p, nearest, K, nearest.weight)
       let region = regions[index]
       let entry = { p, phi }
       // let eidx  = _.sortedIndexBy(region, entry, 'phi')
@@ -122,10 +127,13 @@ function draw(ctx, seeds = []){
   })
 }
 
-export function getImageData(width, height, seeds = []){
+export function getImageData(width, height, seeds = [], weights = []){
   const canvas = new OffscreenCanvas(width, height)
   const ctx = canvas.getContext('2d')
 
+  seeds.forEach((s,i) => {
+    s.weight = weights[i]
+  })
   draw(ctx, seeds)
 
   let data = ctx.getImageData(0, 0, width, height)
@@ -165,6 +173,7 @@ export class Redistricter {
     this.height = height
     this.blocks = getRandomCensusBlocks(blockCount, width, height)
     this.seedPositions = getRandomPoints(seedCount, width, height)
+    this.districtWeights = _.times(seedCount, () => 0)
     this.colors = colorScale.colors(seedCount, 'rgba')
 
     this.restart()
@@ -173,9 +182,11 @@ export class Redistricter {
   restart(){
     this.totalPopulation = 0
     this.blocks.forEach( b => {
-      let K = _.sumBy(this.seedPositions, s => distanceSq(b.position, s))
-      b.phiByDistrict = _.map(this.seedPositions, p => {
-        return calcPhi(b.position, p, K)
+      b.distanceByDistrict = _.map(this.seedPositions, s => distance(b.position, s))
+      let K = _.sumBy(b.distanceByDistrict, d => d*d)
+      b.phiByDistrict = _.map(this.seedPositions, (p, i) => {
+        let weight = this.districtWeights[i]
+        return calcPhi(b.position, p, K, weight)
       })
       b.isTaken = false
       this.totalPopulation += b.population
@@ -189,15 +200,46 @@ export class Redistricter {
       let coords = []
       let weights = []
       district.taken.forEach((b, i) => {
+        let phi = b.phiByDistrict[i]
         coords.push(b.position)
-        weights.push(b.phiByDistrict[i])
+        weights.push(b.population)
       })
-      return getCentroid(coords)
+      let centroid = getCentroid(coords)
+      // let a = district.targetPopulation
+      // let b = _.sumBy(district.blocksInRegion, 'block.population')
+      // let x = lerp(district.position.x, centroid.x, (a-b)/a)
+      // let y = lerp(district.position.y, centroid.y, (a-b)/a)
+      let x = centroid.x
+      let y = centroid.y
+      return { x, y }
     })
+  }
+
+  adjustWeights(){
+    let diffs = this.districts.map( (district, i) => {
+      let a = district.targetPopulation
+      let b = _.sumBy(district.blocksInRegion, 'block.population')
+      return {
+        pd: (a-b)/(0.5 * (a+b))
+        , index: i
+      }
+    })
+
+    // let largest = _.maxBy(diffs, 'pd')
+    // this.districtWeights[largest.index] = 0.01 * largest.pd
+
+    this.districtWeights = diffs.map( d => 0.01 * d.pd )
+    let norm = _.sum( this.districtWeights )
+    this.districtWeights = this.districtWeights.map( d => d - norm / diffs.length )
+    console.log(this.districtWeights)
   }
 
   getSeedPositions(){
     return this.seedPositions
+  }
+
+  getSeedWeights(){
+    return this.districtWeights
   }
 
   getBlocksInRegion( index ){
@@ -208,8 +250,9 @@ export class Redistricter {
       if ( i === index ){
         // in region
         let phi = b.phiByDistrict[index]
+        let distance = b.distanceByDistrict[index]
         let entry = {
-          distance: distance(b.position, pos)
+          distance
           , phi
           , block: b
         }
@@ -284,7 +327,7 @@ export class Redistricter {
   step(){
     if ( this.isDone() ){ return }
     let largestDistrict = _.maxBy(this.districts, 'population')
-    let otherDistricts = _.without(this.districts, largestDistrict)
+    let otherDistricts = _.sortBy(_.without(this.districts, largestDistrict), 'population')
 
     // largest district takes one block.. if it can
     this.takeBlock(largestDistrict)

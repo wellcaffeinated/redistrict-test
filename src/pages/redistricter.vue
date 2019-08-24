@@ -13,7 +13,9 @@
         b-button(@click="step", :loading="working") Step
     b-field(grouped, v-if="isDone")
       b-field
-        b-button(@click="adjustSeedPositions", :loading="working") Adjust Seed Positions
+        b-button(@click="adjustAndRestart", :loading="working") Adjust Seed Positions
+      b-field
+        b-button(@click="adjustWeightsAndRestart", :loading="working") Adjust Seed Weights
 </template>
 
 <script>
@@ -31,9 +33,10 @@ export default {
   }
   , data: () => ({
     working: false
-    , seedPositions: []
+    , seeds: null
     , redistricter: null
     , isDone: false
+    , iteration: 0
     , populationPercentDiff: 0
   })
   , mounted(){
@@ -46,7 +49,7 @@ export default {
     })
   }
   , watch: {
-    seedPositions(){
+    seeds(){
       this.drawRegions()
     }
   }
@@ -59,24 +62,25 @@ export default {
 
       this.redistricter = await new worker.Redistricter({
         seedCount: 10
-        , blockCount: 500
+        , blockCount: 1000
         , width
         , height
       })
 
-      this.seedPositions = await this.redistricter.getSeedPositions()
+      await this.fetchSeeds()
 
       await this.draw()
       this.populationPercentDiff = await this.redistricter.getMaxPopulationDifferencePercentage()
       this.working = false
     }
     , async drawRegions(){
+      console.log('drawRegions')
       this.working = true
       const canvas = this.$refs.regionCanvas
       const ctx = canvas.getContext('2d')
       const width = canvas.width
       const height = canvas.height
-      let regionData = await drawWorker.getImageData(canvas.width, canvas.height, this.seedPositions)
+      let regionData = await drawWorker.getImageData(canvas.width, canvas.height, this.seeds.positions, this.seeds.weights)
       ctx.putImageData(regionData, 0, 0)
       this.working = false
     }
@@ -101,15 +105,41 @@ export default {
       await this.draw()
       this.isDone = await this.redistricter.isDone()
     }
-    , async adjustSeedPositions(){
+    , async adjustAndRestart(){
       this.working = true
-      await this.redistricter.adjustSeedPositions()
+      this.iteration++
+      // if ( this.iteration % 2 ){
+        await this.redistricter.adjustSeedPositions()
+      // } else {
+        // await this.redistricter.adjustWeights()
+      // }
       await this.redistricter.restart()
-      this.seedPositions = await this.redistricter.getSeedPositions()
+      await this.fetchSeeds()
       await this.draw()
       this.populationPercentDiff = await this.redistricter.getMaxPopulationDifferencePercentage()
       this.isDone = false
       this.working = false
+    }
+    , async adjustWeightsAndRestart(){
+      this.working = true
+      this.iteration++
+      // if ( this.iteration % 2 ){
+        // await this.redistricter.adjustSeedPositions()
+      // } else {
+        await this.redistricter.adjustWeights()
+      // }
+      await this.redistricter.restart()
+      await this.fetchSeeds()
+      await this.draw()
+      this.populationPercentDiff = await this.redistricter.getMaxPopulationDifferencePercentage()
+      this.isDone = false
+      this.working = false
+    }
+    , async fetchSeeds(){
+      this.seeds = {
+        positions: await this.redistricter.getSeedPositions()
+        , weights: await this.redistricter.getSeedWeights()
+      }
     }
   }
 }
