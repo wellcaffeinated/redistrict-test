@@ -1,7 +1,7 @@
 extern crate wasm_bindgen;
 #[allow(unused_imports)]
-#[macro_use]
-extern crate serde_derive;
+// #[macro_use]
+// extern crate serde_derive;
 
 use wasm_bindgen::prelude::*;
 
@@ -23,4 +23,4 @@ pub fn browser_debug() {
   console_error_panic_hook::set_once();
 }
 
-extern crate nalgebra as na;
+// extern crate nalgebra as na;

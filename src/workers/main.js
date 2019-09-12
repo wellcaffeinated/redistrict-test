@@ -1,65 +1,25 @@
 import { transfer } from 'comlink'
 import _ from 'lodash'
+import {
+  lerp
+  , distance
+  , distanceSq
+  , getCentroid
+  , getRandomPoints
+} from '@/lib/math'
+
+import {
+  scale
+  , indexWithLowestValue
+} from '@/lib/util'
+
+import {
+  setPixel
+  , drawCircle
+} from '@/lib/draw'
+
 import chroma from 'chroma-js'
 const colorScale = chroma.scale('Paired')
-
-function lerp(a, b, t) {
-  return a * (1 - t) + b * t
-}
-
-function indexWithLowestValue( arr ){
-  let lowestIndex = -1
-  let lowestValue
-  arr.forEach( (v,i) => {
-    if ( lowestValue === undefined || lowestValue > v ){
-      lowestValue = v
-      lowestIndex = i
-    }
-  })
-  return lowestIndex
-}
-
-function getCentroid( coords = [], weights ){
-  let x = 0
-  let y = 0
-  let l = coords.length
-  let totalWeight = 1
-
-  for (let i = 0; i < l; i++){
-    let w = weights ? weights[i] : 1
-    let p = coords[i]
-    x += p.x
-    y += p.y
-    totalWeight += w
-  }
-
-  x /= l
-  y /= l
-
-  return {x, y}
-}
-
-function distanceSq(p, q){
-  let x = p.x - q.x
-  let y = p.y - q.y
-  return x*x + y*y
-}
-
-function distance(p, q){
-  return Math.sqrt(distanceSq(p, q))
-}
-
-function setPixel(ctx, x, y, color = 'white'){
-  ctx.fillStyle = color
-  ctx.fillRect(x, y, 1, 1)
-}
-
-function drawCircle(ctx, {x, y}, radius, color = 'white'){
-  ctx.beginPath()
-  ctx.arc(x, y, radius, 0, 2 * Math.PI, false)
-  ctx.fillStyle = color
-  ctx.fill()
-}
 
 function getNearestSeed(p, seeds = []){
   return _.minBy(seeds, s => distance(p, s))
@@ -70,10 +30,6 @@ function calcPhi(p, seed, K, weight ){
   return d2 + Math.sqrt(d2) - K * (1 + weight)
   // return d2 - K * (1 + weight)
   // return d2 + Math.sqrt(d2) * (1 + weight)
-}
-
-function scale(min, max, z){
-  return (z - min) / (max - min)
 }
 
 function drawRegion( ctx, region, color ){
@@ -141,14 +97,6 @@ export function getImageData(width, height, seeds = [], weights = []){
 }
 
 ///
-
-function getRandomPoints(n, width, height){
-  return _.times(n).map(n => {
-    let x = Math.random() * width
-    let y = Math.random() * height
-    return { x, y }
-  })
-}
 
 function getRandomCensusBlocks(n, width, height){
   let cities = getRandomPoints(10, width, height)
