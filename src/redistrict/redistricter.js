@@ -1,130 +1,192 @@
+import { transfer } from 'comlink'
+import _ from 'lodash'
+import {
+  scale
+  , indexWithLowestValue
+} from '@/lib/util'
+import {
+  lerp
+  , distance
+  , distanceSq
+  , getCentroid
+  , getRandomPoints
+} from '@/lib/math'
+
+// preference function
+function calcPhi(blockPosition, seedPosition, K){
+  let d2 = distanceSq(blockPosition, seedPosition)
+  return d2 + Math.sqrt(d2) - K
+}
+
+class Block {
+  constructor({ position, population, seeds }){
+    this.position = position
+    this.population = population
+
+    this.claimedBy = []
+
+    this.setSeeds(seeds)
+  }
+
+  setSeeds(seeds){
+    this.seeds = seeds
+    this.distanceBySeedIndex = _.map(seeds, s => distance(b.position, s))
+    let K = _.sumBy(this.distanceBySeedIndex, d => d * d)
+    this.phiBySeedIndex = _.map(this.seeds, seed => {
+      return calcPhi(this.position, seed, K)
+    })
+    this.seedPreferenceOrder = _(this.phiBySeedIndex)
+      .map((phi, index) => ({ phi, index })))
+      .sortBy('phi')
+      .map(el => el.index)
+      .value()
+  }
+
+  recordClaim(index){
+    this.claimedBy.push(index)
+  }
+
+  isClaimed(){
+    return this.claimedBy.length > 0
+  }
+
+  isContested(){
+    return this.claimedBy.length > 1
+  }
+
+  getDistanceToSeed(index){
+    return this.distanceBySeedIndex[index]
+  }
+
+  getPhiBySeedIndex(index){
+    return this.phiBySeedIndex[index]
+  }
+
+  getPreferenceRankBySeedIndex(index){
+    return this.seedPreferenceOrder.indexOf(index)
+  }
+
+  getSeedIndexByPreferenceRank(rank){
+    return this.seedPreferenceOrder[rank]
+  }
+}
+
+class District {
+  constructor({ position, targetPopulation, blocks, index }){
+    this.position = position
+    this.targetPopulation = targetPopulation
+    this.index = index
+
+    this.uncontestedPopulation = 0
+    this.population = 0
+    thsi.claimed = []
+
+    this.setBlocks(blocks)
+  }
+
+  setBlocks(blocks){
+    const index = this.index
+
+    // pools is array of arrays. First contains blocks in own region, ordered by phi (small->large)
+    // others contain other regions sorted by distance to this district (small->large)
+    this.pools = []
+    _.forEach(blocks, block => {
+      let rank = block.getPreferenceRankBySeedIndex(index)
+      let phi = block.getPhiBySeedIndex(index)
+      let distance = block.getDistanceToSeed(index)
+      let pool = this.pools[rank] = (this.pools[rank] || [])
+
+      let entry = { rank, phi, distance, block }
+
+      let idx = _.sortedIndexBy(pool, entry, rank === 0 ? phi : distance)
+      pool.splice(idx, 0, entry)
+    })
+  }
+
+  refreshPopulationCounts(){
+    this.population = 0
+    this.uncontestedPopulation = 0
+    for (let i = 0, l = this.claimed.length; i < l; i++){
+      let entry = this.claimed[i]
+
+      this.population += entry.block.population
+
+      if ( !entry.block.isContested() ){
+        this.uncontestedPopulation = 0
+      }
+    }
+  }
+
+  runPhase(phase = 0){
+    this.refreshPopulationCounts()
+    for (let rank = 0; rank <= phase; rank++){
+      this.pickUncontested(rank)
+      if ( this.uncontestedPopulation >= this.targetPopulation ){
+        break
+      }
+    }
+  }
+
+  claim(entry){
+    let block = entry.block
+    this.population += block.population
+    if ( !block.isClaimed() ){
+      this.uncontestedPopulation += block.population
+    }
+
+    this.claimed.push(entry)
+    block.recordClaim(this.index)
+  }
+
+  pickUncontested(rank){
+    let pool = this.pools[rank]
+    for (let i = 0, l = pool.length; i < l; i++){
+      if ( this.uncontestedPopulation >= this.targetPopulation ){
+        break
+      }
+
+      let entry = pool[i]
+      if ( !entry.block.isClaimed() ){
+        this.claim(entry)
+      }
+    }
+  }
+}
 
 export class Redistricter {
-  constructor({ blockCount, seedCount, width, height }){
+  constructor({ blocks, seedCount, width, height }){
     this.width = width
     this.height = height
-    this.blocks = getRandomCensusBlocks(blockCount, width, height)
-    this.seedPositions = getRandomPoints(seedCount, width, height)
-    this.districtWeights = _.times(seedCount, () => 0)
-    this.colors = colorScale.colors(seedCount, 'rgba')
+    this.seedCount = seedCount
+    this.blockData = blocks
 
     this.restart()
   }
 
   restart(){
-    this.totalPopulation = 0
-    this.blocks.forEach( b => {
-      b.distanceByDistrict = _.map(this.seedPositions, s => distance(b.position, s))
-      let K = _.sumBy(b.distanceByDistrict, d => d*d)
-      b.phiByDistrict = _.map(this.seedPositions, (p, i) => {
-        let weight = this.districtWeights[i]
-        return calcPhi(b.position, p, K, weight)
-      })
-      b.isTaken = false
-      this.totalPopulation += b.population
-    })
-    this.blocksTaken = 0
+    this.seeds = getRandomPoints(this.seedCount, this.width, this.height)
+    this.blocks = this.blockData.map(data => new Block({ ...data, seeds: this.seeds }))
+    this.totalPopulation = _.sum(this.blocks, b => b.population)
+
     this.initDistricts()
   }
 
-  adjustSeedPositions(){
-    this.seedPositions = this.districts.map( (district, i) => {
-      let coords = []
-      let weights = []
-      district.taken.forEach((b, i) => {
-        let phi = b.phiByDistrict[i]
-        coords.push(b.position)
-        weights.push(b.population)
+  initDistricts(){
+    let targetPopulation = Math.floor(this.totalPopulation / this.seedCount)
+    let remainder = this.totalPopulation % len
+    this.districts = this.seeds.map((position, index) => {
+      let fudge = Math.max(0, remainder--) && 1
+      return new District({
+        position
+        , index
+        , targetPopulation: targetPopulation + fudge
+        , blocks: this.blocks
       })
-      let centroid = getCentroid(coords)
-      // let a = district.targetPopulation
-      // let b = _.sumBy(district.blocksInRegion, 'block.population')
-      // let x = lerp(district.position.x, centroid.x, (a-b)/a)
-      // let y = lerp(district.position.y, centroid.y, (a-b)/a)
-      let x = centroid.x
-      let y = centroid.y
-      return { x, y }
     })
-  }
-
-  adjustWeights(){
-    let diffs = this.districts.map( (district, i) => {
-      let a = district.targetPopulation
-      let b = _.sumBy(district.blocksInRegion, 'block.population')
-      return {
-        pd: (a-b)/(0.5 * (a+b))
-        , index: i
-      }
-    })
-
-    // let largest = _.maxBy(diffs, 'pd')
-    // this.districtWeights[largest.index] = 0.01 * largest.pd
-
-    this.districtWeights = diffs.map( d => 0.01 * d.pd )
-    let norm = _.sum( this.districtWeights )
-    this.districtWeights = this.districtWeights.map( d => d - norm / diffs.length )
-    console.log(this.districtWeights)
   }
 
   getSeedPositions(){
     return this.seedPositions
-  }
-
-  getSeedWeights(){
-    return this.districtWeights
-  }
-
-  getBlocksInRegion( index ){
-    let pos = this.seedPositions[index]
-    let blocksInRegion = []
-    _.forEach(this.blocks, b => {
-      let i = indexWithLowestValue(b.phiByDistrict)
-      if ( i === index ){
-        // in region
-        let phi = b.phiByDistrict[index]
-        let distance = b.distanceByDistrict[index]
-        let entry = {
-          distance
-          , phi
-          , block: b
-        }
-        let idx = _.sortedIndexBy(blocksInRegion, entry, 'phi')
-        blocksInRegion.splice(idx, 0, entry)
-      }
-    })
-
-    return blocksInRegion
-  }
-
-  initDistricts(){
-    const len = this.seedPositions.length
-    let targetPopulation = Math.floor(this.totalPopulation / len)
-    let remainder = this.totalPopulation % len
-    this.districts = this.seedPositions.map( (position, i) => {
-      let isLast = (i === len - 1)
-      let blocksInRegion = this.getBlocksInRegion( i )
-      let regionPopulation = _.sumBy(blocksInRegion, 'block.population')
-      return {
-        position
-        , blocksInRegion
-        , regionPopulation
-        , population: 0
-        // FIXME naiive...
-        , targetPopulation: Math.floor(targetPopulation) + (isLast ? remainder : 0)
-        , taken: [] // blocks taken
-      }
-    })
-
-    this.districts.forEach( district => {
-      const others = _.without(this.districts, district)
-      const othersByDistance = _.sortBy(others, o => distanceSq(o.position, district.position))
-      district.blockSorting = district.blocksInRegion.concat([])
-
-      othersByDistance.forEach( o => {
-        let copy = _.reverse(o.blocksInRegion.concat([]))
-        district.blockSorting = district.blockSorting.concat(copy)
-      })
-    })
   }
 
   takeBlock(district){
@@ -143,10 +205,6 @@ export class Redistricter {
     district.population += next.block.population
     district.taken.push(next.block)
     this.blocksTaken++
-  }
-
-  isDone(){
-    return this.blocksTaken >= this.blocks.length
   }
 
   stepBy( nSteps ){
