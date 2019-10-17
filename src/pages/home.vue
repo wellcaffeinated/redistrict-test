@@ -1,6 +1,6 @@
 <template lang="pug">
 .home
-  b-button(@click="generate", :loading="working") Generate
+  b-input(v-model="seedIndex", type="number", :loading="working")
   .canvas
     canvas(ref="canvas", width="500", height="500")
 </template>
@@ -8,6 +8,7 @@
 <script>
 import _times from 'lodash/times'
 import createWorker from '@/workers/main'
+import Redistricter from '@/redistrict/redistricter'
 
 const worker = createWorker()
 
@@ -19,30 +20,39 @@ export default {
   }
   , data: () => ({
     working: false
-    , seeds: []
+    , seedIndex: 0
   })
   , mounted(){
+    this.init()
   }
   , watch: {
-    seeds(){
-      const canvas = this.$refs.canvas
-      const ctx = canvas.getContext('2d')
-      this.working = true
-      worker.getImageData(canvas.width, canvas.height, this.seeds).then( data => {
-        ctx.putImageData(data, 0, 0)
-      }).finally(() => {
-        this.working = false
-      })
+    seedIndex(index){
+      if ( Number.isFinite(index|0) ){
+        this.draw()
+      }
     }
   }
   , methods: {
-    generate(){
+    async init(){
+      this.working = true
       const canvas = this.$refs.canvas
-      this.seeds = _times(10).map(n => {
-        let x = Math.random() * canvas.width
-        let y = Math.random() * canvas.height
-        return { x, y }
+      this.redistricter = await new worker.Redistricter({
+        blocks: 200
+        , seedCount: 6
+        , width: canvas.width
+        , height: canvas.height
       })
+
+      await this.draw()
+      this.working = false
+    }
+    , async draw(){
+      this.working = true
+      const canvas = this.$refs.canvas
+      const ctx = canvas.getContext('2d')
+      let regionData = await this.redistricter.getRankMapFor(this.seedIndex|0)
+      ctx.putImageData(regionData, 0, 0)
+      this.working = false
     }
   }
 }

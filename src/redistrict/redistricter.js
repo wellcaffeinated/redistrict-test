@@ -11,11 +11,42 @@ import {
   , getCentroid
   , getRandomPoints
 } from '@/lib/math'
+import {
+  setPixel
+  , drawCircle
+} from '@/lib/draw'
+
+import chroma from 'chroma-js'
+const colorScale = chroma.scale(['red', 'green'])
 
 // preference function
 function calcPhi(blockPosition, seedPosition, K){
   let d2 = distanceSq(blockPosition, seedPosition)
   return d2 + Math.sqrt(d2) - K
+}
+
+function rankOfPoint(point, index, districts){
+  let K = _.sumBy(districts, d => distanceSq(d.position, point))
+  let phiRanks = districts.map(d => ({ phi: calcPhi(point, d.position, K), index: d.index }))
+  phiRanks = _.sortBy(phiRanks, 'phi')
+  return _.findIndex(phiRanks, { index })
+}
+
+function getRandomCensusBlocks(n, width, height){
+  let cities = getRandomPoints(10, width, height)
+
+  return getRandomPoints(n, width, height).map( position => {
+    let nearest = _.minBy(cities, s => distanceSq(position, s))
+    let d = distance(nearest, position)
+    let min = Math.max(100, scale(width, 0, d) * 5000)
+    let max = min + 1000
+    let population = _.random(min|0, max|0)
+
+    return {
+      position
+      , population
+    }
+  })
 }
 
 class Block {
@@ -30,13 +61,13 @@ class Block {
 
   setSeeds(seeds){
     this.seeds = seeds
-    this.distanceBySeedIndex = _.map(seeds, s => distance(b.position, s))
+    this.distanceBySeedIndex = _.map(seeds, s => distance(this.position, s))
     let K = _.sumBy(this.distanceBySeedIndex, d => d * d)
     this.phiBySeedIndex = _.map(this.seeds, seed => {
       return calcPhi(this.position, seed, K)
     })
     this.seedPreferenceOrder = _(this.phiBySeedIndex)
-      .map((phi, index) => ({ phi, index })))
+      .map((phi, index) => ({ phi, index }))
       .sortBy('phi')
       .map(el => el.index)
       .value()
@@ -79,7 +110,7 @@ class District {
 
     this.uncontestedPopulation = 0
     this.population = 0
-    thsi.claimed = []
+    this.claimed = []
 
     this.setBlocks(blocks)
   }
@@ -158,6 +189,12 @@ export class Redistricter {
     this.width = width
     this.height = height
     this.seedCount = seedCount
+
+    // testing...
+    if ( Number.isFinite(blocks) ){
+      blocks = getRandomCensusBlocks(blocks, width, height)
+    }
+
     this.blockData = blocks
 
     this.restart()
@@ -173,7 +210,7 @@ export class Redistricter {
 
   initDistricts(){
     let targetPopulation = Math.floor(this.totalPopulation / this.seedCount)
-    let remainder = this.totalPopulation % len
+    let remainder = this.totalPopulation % this.seedCount
     this.districts = this.seeds.map((position, index) => {
       let fudge = Math.max(0, remainder--) && 1
       return new District({
@@ -185,89 +222,59 @@ export class Redistricter {
     })
   }
 
-  getSeedPositions(){
-    return this.seedPositions
-  }
-
-  takeBlock(district){
-    if ( district.population >= district.targetPopulation ){ return }
-    if ( !district.blockSorting.length ){ return }
-
-    let next = district.blockSorting.shift()
-
-    while ( next.block.isTaken ){
-      if ( !district.blockSorting.length ){ return }
-      // if it's taken... remove the next
-      next = district.blockSorting.shift()
-    }
-
-    next.block.isTaken = true
-    district.population += next.block.population
-    district.taken.push(next.block)
-    this.blocksTaken++
-  }
-
-  stepBy( nSteps ){
-    if ( this.isDone() ){ return }
-    for (let i = 0; i < nSteps|0; i++){
-      this.step()
-    }
-  }
-
-  step(){
-    if ( this.isDone() ){ return }
-    let largestDistrict = _.maxBy(this.districts, 'population')
-    let otherDistricts = _.sortBy(_.without(this.districts, largestDistrict), 'population')
-
-    // largest district takes one block.. if it can
-    this.takeBlock(largestDistrict)
-
-    otherDistricts.forEach( district => {
-      while (
-        !this.isDone() &&
-        district.population < largestDistrict.population &&
-        district.population < district.targetPopulation
-      ){
-        this.takeBlock( district )
-      }
-    })
-  }
-
-  getMaxPopulationDifferencePercentage(){
-    let min = _.minBy(this.districts, 'regionPopulation').regionPopulation
-    let max = _.maxBy(this.districts, 'regionPopulation').regionPopulation
-
-    return 100 * (max - min) / (0.5 * (max + min))
-  }
-
-  getImageData(){
+  getRankMapFor(index){
     const width = this.width
     const height = this.height
     const canvas = new OffscreenCanvas(width, height)
     const ctx = canvas.getContext('2d')
 
-    let untaken = 0
-    this.blocks.forEach(b => {
-      if ( b.isTaken ){ return }
-      untaken++
-      drawCircle(ctx, b.position, 1, 'white')
-    })
+    const colors = colorScale.colors(this.districts.length, 'rgba')
 
-    // console.log(`There are ${untaken} blocks left`, this.districts)
+    for (let y = 0; y < height; y++){
+      for (let x = 0; x < width; x++){
+        let p = {x, y}
+        let rank = rankOfPoint(p, index, this.districts)
+        let color = colors[rank]
+        setPixel(ctx, x, y, color.css())
+      }
+    }
 
-    this.districts.forEach((district, i) => {
-      let color = this.colors[i].css()
-      district.taken.forEach(b => {
-        drawCircle(ctx, b.position, 1, color)
-      })
-    })
-
-    // draw district seed positions
-    this.seedPositions.forEach( (p, i) => {
-      drawCircle(ctx, p, 5, this.colors[i].css())
-    })
+    this.districts.forEach( (d, i) =>
+      drawCircle(ctx, d.position, 5, i === index ? 'white' : 'grey')
+    )
 
     let data = ctx.getImageData(0, 0, width, height)
     return transfer(data, [data.data.buffer])
   }
+
+  // getImageData(){
+  //   const width = this.width
+  //   const height = this.height
+  //   const canvas = new OffscreenCanvas(width, height)
+  //   const ctx = canvas.getContext('2d')
+  //
+  //   let untaken = 0
+  //   this.blocks.forEach(b => {
+  //     if ( b.isTaken ){ return }
+  //     untaken++
+  //     drawCircle(ctx, b.position, 1, 'white')
+  //   })
+  //
+  //   // console.log(`There are ${untaken} blocks left`, this.districts)
+  //
+  //   this.districts.forEach((district, i) => {
+  //     let color = this.colors[i].css()
+  //     district.taken.forEach(b => {
+  //       drawCircle(ctx, b.position, 1, color)
+  //     })
+  //   })
+  //
+  //   // draw district seed positions
+  //   this.seedPositions.forEach( (p, i) => {
+  //     drawCircle(ctx, p, 5, this.colors[i].css())
+  //   })
+  //
+  //   let data = ctx.getImageData(0, 0, width, height)
+  //   return transfer(data, [data.data.buffer])
+  // }
 }
