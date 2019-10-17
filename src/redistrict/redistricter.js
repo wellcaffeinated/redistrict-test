@@ -222,6 +222,10 @@ export class Redistricter {
     })
   }
 
+  getSeedPositions(){
+    return this.seeds
+  }
+
   getRankMapFor(index){
     const width = this.width
     const height = this.height
