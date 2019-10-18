@@ -1,9 +1,14 @@
 <template lang="pug">
 .home
-  b-loading(:active="working")
+  b-loading(:active="working > 0")
   .canvas
     canvas(ref="canvas", width="500", height="500")
     canvas(ref="canvasTop", width="500", height="500", @mousemove="selectNearestIndex", @mouseleave="seedIndex = -1")
+  .controls
+    b-field
+      b-select(v-model="overlayMode")
+        option(value="ranks") Rank maps
+        option(value="phi") Phi maps
 </template>
 
 <script>
@@ -22,8 +27,9 @@ export default {
   , components: {
   }
   , data: () => ({
-    working: false
+    working: 0
     , seedIndex: -1
+    , overlayMode: 'ranks'
   })
   , mounted(){
     this.init()
@@ -34,10 +40,13 @@ export default {
         this.draw()
       }
     }
+    , overlayMode(){
+      this.getOverlays()
+    }
   }
   , methods: {
     async init(){
-      this.working = true
+      this.working++
       const canvas = this.$refs.canvas
       this.redistricter = await new worker.Redistricter({
         blocks: 200
@@ -48,14 +57,20 @@ export default {
       this.seedCoords = await this.redistricter.getSeedPositions()
       this.regionsImage = await this.redistricter.getRegionMap()
       this.drawImage(this.$refs.canvas, this.regionsImage)
+      await this.getOverlays()
+      await this.draw()
+      this.working--
+    }
+    , async getOverlays(){
+      this.working++
+      let fn = this.overlayMode === 'ranks' ? 'getRankMapFor' : 'getPhiMapFor'
       let images = []
       for (let i = 0; i < this.seedCoords.length; i++){
-        let data = await this.redistricter.getRankMapFor(i)
+        let data = await this.redistricter[fn](i)
         images.push(data)
       }
       this.images = images
-      await this.draw()
-      this.working = false
+      this.working--
     }
     , selectNearestIndex(e){
       if ( !this.seedCoords ){ return }
@@ -77,9 +92,9 @@ export default {
         this.clearCanvas(this.$refs.canvasTop)
         return
       }
-      this.working = true
+      this.working++
       this.drawImage(this.$refs.canvasTop, this.images[this.seedIndex])
-      this.working = false
+      this.working--
     }
   }
 }
