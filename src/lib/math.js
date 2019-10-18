@@ -42,7 +42,7 @@ export function getRandomPoints(n, width, height){
   })
 }
 
-export function RunningStatistics(){
+export function RunningStatistics( initialData = [] ){
   let m = 0
   let s = 0
   let n = 0
@@ -56,7 +56,7 @@ export function RunningStatistics(){
     n++
     let x = v - m
 
-    // Mk = Mk-1+ (xk – Mk-1)/k
+    // Mk = Mk-1 + (xk – Mk-1)/k
     // Sk = Sk-1 + (xk – Mk-1)*(xk – Mk).
     m += x / n
     s += x * (v - m)
@@ -76,6 +76,10 @@ export function RunningStatistics(){
 
   function max(){ return _max }
   function min(){ return _min }
+
+  for ( let i = 0, l = initialData.length; i < l; i++ ){
+    push(initialData[i])
+  }
 
   return {
     mean

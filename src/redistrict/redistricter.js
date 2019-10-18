@@ -64,12 +64,23 @@ function getRandomCensusBlocks(n, width, height){
   })
 }
 
+function drawDistrictBlocks(ctx, district, color, populationColorScale){
+  _.forEach(district.pools[0], entry => {
+    let pos = entry.block.position
+    let color = populationColorScale ? populationColorScale(entry.block.population) : 'white'
+    drawCircle(ctx, pos, 2, color)
+  })
+  _.forEach(district.claimed, entry => {
+    let pos = entry.block.position
+    drawCircle(ctx, pos, 2, color)
+  })
+}
+
 class Block {
   constructor({ position, population, seeds }){
     this.position = position
     this.population = population
-
-    this.claimedBy = []
+    this.district = null
 
     this.setSeeds(seeds)
   }
@@ -88,16 +99,12 @@ class Block {
       .value()
   }
 
-  recordClaim(index){
-    this.claimedBy.push(index)
+  assignTo(district){
+    this.district = district
   }
 
   isClaimed(){
-    return this.claimedBy.length > 0
-  }
-
-  isContested(){
-    return this.claimedBy.length > 1
+    return !!this.district
   }
 
   getDistanceToSeed(index){
@@ -123,7 +130,6 @@ class District {
     this.targetPopulation = targetPopulation
     this.index = index
 
-    this.uncontestedPopulation = 0
     this.population = 0
     this.claimed = []
 
@@ -144,58 +150,32 @@ class District {
 
       let entry = { rank, phi, distance, block }
 
-      let idx = _.sortedIndexBy(pool, entry, rank === 0 ? phi : distance)
+      let idx = _.sortedIndexBy(pool, entry, rank === 0 ? 'phi' : 'distance')
       pool.splice(idx, 0, entry)
     })
   }
 
-  refreshPopulationCounts(){
-    this.population = 0
-    this.uncontestedPopulation = 0
-    for (let i = 0, l = this.claimed.length; i < l; i++){
-      let entry = this.claimed[i]
-
-      this.population += entry.block.population
-
-      if ( !entry.block.isContested() ){
-        this.uncontestedPopulation = 0
-      }
-    }
+  availablePopulation(){
+    return _.sumBy(this.pools[0], 'block.population')
   }
 
-  runPhase(phase = 0){
-    this.refreshPopulationCounts()
-    for (let rank = 0; rank <= phase; rank++){
-      this.pickUncontested(rank)
-      if ( this.uncontestedPopulation >= this.targetPopulation ){
+  selectBlocksWithinRegion(){
+    let pool = this.pools[0]
+    let entry
+    while ( entry = pool.shift() ){
+      if ( this.population >= this.targetPopulation ){
         break
       }
+
+      this.claim(entry)
     }
   }
 
   claim(entry){
     let block = entry.block
     this.population += block.population
-    if ( !block.isClaimed() ){
-      this.uncontestedPopulation += block.population
-    }
-
     this.claimed.push(entry)
-    block.recordClaim(this.index)
-  }
-
-  pickUncontested(rank){
-    let pool = this.pools[rank]
-    for (let i = 0, l = pool.length; i < l; i++){
-      if ( this.uncontestedPopulation >= this.targetPopulation ){
-        break
-      }
-
-      let entry = pool[i]
-      if ( !entry.block.isClaimed() ){
-        this.claim(entry)
-      }
-    }
+    block.assignTo(this)
   }
 }
 
@@ -212,15 +192,36 @@ export class Redistricter {
 
     this.blockData = blocks
 
+    this.seeds = getRandomPoints(this.seedCount, this.width, this.height)
     this.restart()
   }
 
   restart(){
-    this.seeds = getRandomPoints(this.seedCount, this.width, this.height)
     this.blocks = this.blockData.map(data => new Block({ ...data, seeds: this.seeds }))
-    this.totalPopulation = _.sum(this.blocks, b => b.population)
+    this.totalPopulation = _.sumBy(this.blocks, b => b.population)
 
     this.initDistricts()
+  }
+
+  adjustSeedPositions(){
+    let newSeeds = _.map(this.districts, (district, i) => {
+      let points = []
+      let weights = []
+      district.claimed.forEach(entry => {
+        points.push(entry.block.position)
+        weights.push(entry.block.population)
+        entry.block.district = null
+      })
+      return getCentroid(points, weights)
+    })
+
+    let seedMovement = _.max(_.map(newSeeds, (s, i) => {
+      return distance(s, this.seeds[i])
+    }))
+
+    this.seeds = newSeeds
+    this.restart()
+    return seedMovement
   }
 
   initDistricts(){
@@ -237,12 +238,29 @@ export class Redistricter {
     })
   }
 
+  run(){
+    _.forEach(this.districts, district => {
+      district.selectBlocksWithinRegion()
+    })
+  }
+
   getSeedPositions(){
     return this.seeds
   }
 
+  getMaxPopulationDifferencePercentage(){
+    let min = _.minBy(this.districts, 'population').population
+    let max = _.maxBy(this.districts, 'population').population
+
+    return 100 * (max - min) / (0.5 * (max + min))
+  }
+
+  getDistrict(index){
+    return this.districts[index]
+  }
+
   getPhiMapFor(index){
-    const regionColors = chroma.scale('Paired').colors(this.seeds.length, 'rgba')
+    const regionColors = chroma.scale('Paired').colors(this.seedCount, 'rgba')
     const width = this.width
     const height = this.height
     const canvas = new OffscreenCanvas(width, height)
@@ -282,7 +300,7 @@ export class Redistricter {
   }
 
   getRankMapFor(index){
-    const regionColors = chroma.scale('Paired').colors(this.seeds.length, 'rgba')
+    const regionColors = chroma.scale('Paired').colors(this.seedCount, 'rgba')
     const width = this.width
     const height = this.height
     const canvas = new OffscreenCanvas(width, height)
@@ -318,7 +336,7 @@ export class Redistricter {
       setPixel(ctx, point.x, point.y, color.css())
     }
 
-    // const colors = colorScale.colors(this.seeds.length, 'rgba')
+    // const colors = colorScale.colors(this.seedCount, 'rgba')
     //
     // for (let y = 0; y < height; y++){
     //   for (let x = 0; x < width; x++){
@@ -344,10 +362,10 @@ export class Redistricter {
     const canvas = new OffscreenCanvas(width, height)
     const ctx = canvas.getContext('2d')
 
-    const colors = colorScale.colors(this.seeds.length, 'rgba')
+    const colors = colorScale.colors(this.seedCount, 'rgba')
 
     let points = []
-    let phiStats = _.times(this.seeds.length, () => RunningStatistics())
+    let phiStats = _.times(this.seedCount, () => RunningStatistics())
 
     for (let y = 0; y < height; y++){
       for (let x = 0; x < width; x++){
@@ -369,9 +387,13 @@ export class Redistricter {
       setPixel(ctx, point.x, point.y, color.css())
     }
 
-    this.districts.forEach( (d, i) =>
+    let maxPopulation = _.max(this.blocks.map(b => b.population))
+    let populationColorScale = chroma.scale(['black', 'white']).mode('lab').domain([0, maxPopulation])
+
+    this.districts.forEach( (d, i) => {
       drawCircle(ctx, d.position, 5, colors[i])
-    )
+      drawDistrictBlocks(ctx, d, colors[i], populationColorScale)
+    })
 
     let data = ctx.getImageData(0, 0, width, height)
     return transfer(data, [data.data.buffer])

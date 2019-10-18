@@ -1,14 +1,34 @@
 <template lang="pug">
 .home
   b-loading(:active="working > 0")
-  .canvas
-    canvas(ref="canvas", width="500", height="500")
-    canvas(ref="canvasTop", width="500", height="500", @mousemove="selectNearestIndex", @mouseleave="seedIndex = -1")
+  .columns
+    .column
+      .canvas
+        canvas(ref="canvas", width="500", height="500")
+        canvas(ref="canvasTop", width="500", height="500", @mousemove="selectNearestIndex", @mouseleave="seedIndex = -1")
+    .column
+      pre
+        | seed movement: {{ seedMovement }}
+        | population percent diff: {{ populationPercentDiff }}%
+      pre
+        | district: {{ seedIndex }}
+        | target population: {{ districtInfo.targetPopulation }}
+        | population: {{ districtInfo.population }}
   .controls
-    b-field
-      b-select(v-model="overlayMode")
-        option(value="ranks") Rank maps
-        option(value="phi") Phi maps
+    b-field(grouped)
+      b-field
+        b-select(v-model="overlayMode")
+          option(value="ranks") Rank maps
+          option(value="phi") Phi maps
+      b-field
+        b-button(@click="getOverlays") Draw Overlays
+    b-field(grouped)
+      b-field
+        b-button(@click="run") Run
+      b-field
+        b-button(@click="adjustSeeds") Adjust Seeds
+      b-field
+        b-button(@click="runUntilStable") Stablize Seeds
 </template>
 
 <script>
@@ -30,14 +50,19 @@ export default {
     working: 0
     , seedIndex: -1
     , overlayMode: 'ranks'
+    , overlays: null
+    , seedMovement: null
+    , populationPercentDiff: null
+    , districtInfo: {}
   })
   , mounted(){
     this.init()
   }
   , watch: {
     seedIndex(index){
-      if ( Number.isFinite(index|0) && this.images ){
-        this.draw()
+      if ( Number.isFinite(index|0) ){
+        this.drawOverlays()
+        this.getDistrictInfo()
       }
     }
     , overlayMode(){
@@ -49,27 +74,26 @@ export default {
       this.working++
       const canvas = this.$refs.canvas
       this.redistricter = await new worker.Redistricter({
-        blocks: 200
+        blocks: 2000
         , seedCount: 6
         , width: canvas.width
         , height: canvas.height
       })
       this.seedCoords = await this.redistricter.getSeedPositions()
-      this.regionsImage = await this.redistricter.getRegionMap()
-      this.drawImage(this.$refs.canvas, this.regionsImage)
-      await this.getOverlays()
-      await this.draw()
+      await this.drawRegions()
+      // await this.getOverlays()
+      // await this.drawOverlays()
       this.working--
     }
     , async getOverlays(){
       this.working++
       let fn = this.overlayMode === 'ranks' ? 'getRankMapFor' : 'getPhiMapFor'
-      let images = []
+      let overlays = []
       for (let i = 0; i < this.seedCoords.length; i++){
         let data = await this.redistricter[fn](i)
-        images.push(data)
+        overlays.push(data)
       }
-      this.images = images
+      this.overlays = overlays
       this.working--
     }
     , selectNearestIndex(e){
@@ -87,13 +111,57 @@ export default {
       const ctx = canvas.getContext('2d')
       ctx.clearRect(0, 0, canvas.width, canvas.height)
     }
-    , async draw(){
-      if ( this.seedIndex < 0 ) {
+    , async getDistrictInfo(){
+      if ( this.seedIndex < 0 ){
+        this.districtInfo = {}
+        return
+      }
+      let district = await this.redistricter.getDistrict(this.seedIndex)
+      this.districtInfo = district
+    }
+    , async run(nodraw){
+      this.working++
+      this.overlays = null
+      await this.redistricter.run()
+      this.populationPercentDiff = await this.redistricter.getMaxPopulationDifferencePercentage()
+      if ( nodraw !== true ){
+        await this.drawRegions()
+      }
+      this.working--
+    }
+    , async runUntilStable(){
+      this.working++
+      const threshold = 1e-6
+      do {
+        await this.run(true)
+        await this.adjustSeeds(true)
+      } while ( this.seedMovement > threshold );
+      await this.run(true)
+      await this.drawRegions()
+      this.working--
+    }
+    , async adjustSeeds(nodraw){
+      this.working++
+      this.seedMovement = await this.redistricter.adjustSeedPositions()
+      this.seedCoords = await this.redistricter.getSeedPositions()
+      if ( nodraw !== true ){
+        await this.drawRegions()
+      }
+      this.working--
+    }
+    , async drawRegions(){
+      this.working++
+      this.regionsImage = await this.redistricter.getRegionMap()
+      this.drawImage(this.$refs.canvas, this.regionsImage)
+      this.working--
+    }
+    , async drawOverlays(){
+      if ( this.seedIndex < 0 || !this.overlays ) {
         this.clearCanvas(this.$refs.canvasTop)
         return
       }
       this.working++
-      this.drawImage(this.$refs.canvasTop, this.images[this.seedIndex])
+      this.drawImage(this.$refs.canvasTop, this.overlays[this.seedIndex])
       this.working--
     }
   }
