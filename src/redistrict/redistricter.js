@@ -10,6 +10,7 @@ import {
   , distanceSq
   , getCentroid
   , getRandomPoints
+  , RunningStatistics
 } from '@/lib/math'
 import {
   setPixel
@@ -17,7 +18,6 @@ import {
 } from '@/lib/draw'
 
 import chroma from 'chroma-js'
-const colorScale = chroma.scale(['red', 'green'])
 
 // preference function
 function calcPhi(blockPosition, seedPosition, K){
@@ -25,10 +25,19 @@ function calcPhi(blockPosition, seedPosition, K){
   return d2 + Math.sqrt(d2) - K
 }
 
-function rankOfPoint(point, index, districts){
-  let K = _.sumBy(districts, d => distanceSq(d.position, point))
-  let phiRanks = districts.map(d => ({ phi: calcPhi(point, d.position, K), index: d.index }))
-  phiRanks = _.sortBy(phiRanks, 'phi')
+function getPhiRanksForPoint(point, seeds){
+  let K = _.sumBy(seeds, s => distanceSq(s, point))
+  let phiRanks = seeds.map((s, index) => ({ phi: calcPhi(point, s, K), index }))
+  return _.sortBy(phiRanks, 'phi')
+}
+
+function getRegionIndex(point, seeds){
+  let phiRanks = getPhiRanksForPoint(point, seeds)
+  return phiRanks[0].index
+}
+
+function rankOfPoint(point, index, seeds){
+  let phiRanks = getPhiRanksForPoint(point, seeds)
   return _.findIndex(phiRanks, { index })
 }
 
@@ -227,24 +236,65 @@ export class Redistricter {
   }
 
   getRankMapFor(index){
+    const regionColors = chroma.scale('Paired').colors(this.seeds.length, 'rgba')
+    const colorScale = chroma.scale(['rgba(0,0,0,0)', 'black'])
     const width = this.width
     const height = this.height
     const canvas = new OffscreenCanvas(width, height)
     const ctx = canvas.getContext('2d')
 
-    const colors = colorScale.colors(this.districts.length, 'rgba')
+    const colors = colorScale.colors(this.seeds.length, 'rgba')
 
     for (let y = 0; y < height; y++){
       for (let x = 0; x < width; x++){
         let p = {x, y}
-        let rank = rankOfPoint(p, index, this.districts)
+        let rank = rankOfPoint(p, index, this.seeds)
         let color = colors[rank]
         setPixel(ctx, x, y, color.css())
       }
     }
 
+    this.seeds.forEach( (s, i) =>
+      drawCircle(ctx, s, 5, regionColors[i].css())
+    )
+
+    let data = ctx.getImageData(0, 0, width, height)
+    return transfer(data, [data.data.buffer])
+  }
+
+  getRegionMap(){
+    const colorScale = chroma.scale('Paired')
+    const width = this.width
+    const height = this.height
+    const canvas = new OffscreenCanvas(width, height)
+    const ctx = canvas.getContext('2d')
+
+    const colors = colorScale.colors(this.seeds.length, 'rgba')
+
+    let points = []
+    let phiStats = _.times(this.seeds.length, () => RunningStatistics())
+
+    for (let y = 0; y < height; y++){
+      for (let x = 0; x < width; x++){
+        let p = {x, y}
+        let phis = getPhiRanksForPoint(p, this.seeds)
+        let { index, phi } = phis[0]
+        points.push({ point: p, phi, index })
+        phiStats[index].push(phi)
+      }
+    }
+
+    for (let i = 0, l = points.length; i < l; i++){
+      let { index, phi, point } = points[i]
+      let stats = phiStats[index]
+      let range = stats.min() - stats.max()
+      let alpha = (phi - stats.max())/range
+      let color = colors[index]
+      setPixel(ctx, point.x, point.y, color.luminance(alpha).css())
+    }
+
     this.districts.forEach( (d, i) =>
-      drawCircle(ctx, d.position, 5, i === index ? 'white' : 'grey')
+      drawCircle(ctx, d.position, 5, colors[i])
     )
 
     let data = ctx.getImageData(0, 0, width, height)

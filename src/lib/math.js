@@ -1,3 +1,4 @@
+import _ from 'lodash'
 
 export function lerp(a, b, t) {
   return a * (1 - t) + b * t
@@ -39,4 +40,48 @@ export function getRandomPoints(n, width, height){
     let y = Math.random() * height
     return { x, y }
   })
+}
+
+export function RunningStatistics(){
+  let m = 0
+  let s = 0
+  let n = 0
+  let _max = null
+  let _min = null
+
+  // Push a value to a running average calculation.
+  // see [http://www.johndcook.com/blog/standard_deviation]
+  // Note: variance can be calculated from the "s" value by multiplying it by `1/(n-1)`
+  function push(v){
+    n++
+    let x = v - m
+
+    // Mk = Mk-1+ (xk – Mk-1)/k
+    // Sk = Sk-1 + (xk – Mk-1)*(xk – Mk).
+    m += x / n
+    s += x * (v - m)
+
+    // max / min
+    _max = Math.max(v, _max)
+    _min = Math.min(v, _min)
+  }
+
+  function mean(){
+    return m
+  }
+
+  function stddev(){
+    return s/(n-1)
+  }
+
+  function max(){ return _max }
+  function min(){ return _min }
+
+  return {
+    mean
+    , stddev
+    , max
+    , min
+    , push
+  }
 }

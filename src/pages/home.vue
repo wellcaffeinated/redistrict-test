@@ -1,14 +1,14 @@
 <template lang="pug">
 .home
+  b-loading(:active="working")
   .canvas
-    b-loading(:active="working")
-    canvas(ref="canvas", width="500", height="500", @mousemove="selectNearestIndex")
+    canvas(ref="canvas", width="500", height="500")
+    canvas(ref="canvasTop", width="500", height="500", @mousemove="selectNearestIndex", @mouseleave="seedIndex = -1")
 </template>
 
 <script>
 import _minBy from 'lodash/minBy'
 import createWorker from '@/workers/main'
-import Redistricter from '@/redistrict/redistricter'
 import {
   distanceSq
 } from '@/lib/math'
@@ -23,7 +23,7 @@ export default {
   }
   , data: () => ({
     working: false
-    , seedIndex: 0
+    , seedIndex: -1
   })
   , mounted(){
     this.init()
@@ -46,6 +46,8 @@ export default {
         , height: canvas.height
       })
       this.seedCoords = await this.redistricter.getSeedPositions()
+      this.regionsImage = await this.redistricter.getRegionMap()
+      this.drawImage(this.$refs.canvas, this.regionsImage)
       let images = []
       for (let i = 0; i < this.seedCoords.length; i++){
         let data = await this.redistricter.getRankMapFor(i)
@@ -62,12 +64,21 @@ export default {
       let seed = _minBy(this.seedCoords, s => distanceSq({x, y}, s))
       this.seedIndex = this.seedCoords.indexOf(seed)
     }
-    , async draw(){
-      this.working = true
-      const canvas = this.$refs.canvas
+    , drawImage(canvas, data){
       const ctx = canvas.getContext('2d')
-      let regionData = this.images[this.seedIndex]
-      ctx.putImageData(regionData, 0, 0)
+      ctx.putImageData(data, 0, 0)
+    }
+    , clearCanvas(canvas){
+      const ctx = canvas.getContext('2d')
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+    }
+    , async draw(){
+      if ( this.seedIndex < 0 ) {
+        this.clearCanvas(this.$refs.canvasTop)
+        return
+      }
+      this.working = true
+      this.drawImage(this.$refs.canvasTop, this.images[this.seedIndex])
       this.working = false
     }
   }
@@ -77,6 +88,12 @@ export default {
 <style lang="sass" scoped>
 .home
   padding: 1rem
+.canvas
+  position: relative
+  canvas + canvas
+    position: absolute
+    top: 0
+    left: 0
 canvas
   border: 1px solid rgba(255, 255, 255, 0.3)
 </style>
