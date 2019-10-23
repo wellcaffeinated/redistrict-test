@@ -14,28 +14,28 @@ export function distance(p, q){
   return Math.sqrt(distanceSq(p, q))
 }
 
-export function getCentroid( coords = [], weights ){
+export function getCentroid( coords = [], weights = [] ){
   let x = 0
   let y = 0
   let l = coords.length
-  let totalWeight = 1
+  let totalWeight = 0
 
   for (let i = 0; i < l; i++){
     let w = weights ? weights[i] : 1
     let p = coords[i]
-    x += p.x
-    y += p.y
+    x += p.x * w
+    y += p.y * w
     totalWeight += w
   }
 
-  x /= l
-  y /= l
+  x /= totalWeight
+  y /= totalWeight
 
   return {x, y}
 }
 
 export function getRandomPoints(n, width, height){
-  return _.times(n).map(n => {
+  return _.times(n).map(() => {
     let x = Math.random() * width
     let y = Math.random() * height
     return { x, y }
