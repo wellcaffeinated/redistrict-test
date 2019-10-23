@@ -1,5 +1,6 @@
 import { transfer } from 'comlink'
 import _ from 'lodash'
+import Voronoi from '@/lib/rhill-voronoi-core'
 import {
   scale
   , indexWithLowestValue
@@ -15,7 +16,10 @@ import {
 import {
   setPixel
   , drawCircle
+  , drawPolygon
 } from '@/lib/draw'
+
+const voronoi = new Voronoi()
 
 import chroma from 'chroma-js'
 
@@ -68,11 +72,11 @@ function drawDistrictBlocks(ctx, district, color, populationColorScale){
   _.forEach(district.pools[0], entry => {
     let pos = entry.block.position
     let color = populationColorScale ? populationColorScale(entry.block.population) : 'white'
-    drawCircle(ctx, pos, 2, color)
+    drawCircle(ctx, pos, 1, color)
   })
   _.forEach(district.claimed, entry => {
     let pos = entry.block.position
-    drawCircle(ctx, pos, 2, color)
+    drawCircle(ctx, pos, 1, color)
   })
 }
 
@@ -192,6 +196,10 @@ export class Redistricter {
 
     this.blockData = blocks
 
+    this.randomizeSeeds()
+  }
+
+  randomizeSeeds(){
     this.seeds = getRandomPoints(this.seedCount, this.width, this.height)
     this.restart()
   }
@@ -355,7 +363,7 @@ export class Redistricter {
     return transfer(data, [data.data.buffer])
   }
 
-  getRegionMap(){
+  getPhiRegionMap(){
     const colorScale = chroma.scale('Paired')
     const width = this.width
     const height = this.height
@@ -391,42 +399,57 @@ export class Redistricter {
     let populationColorScale = chroma.scale(['black', 'white']).mode('lab').domain([0, maxPopulation])
 
     this.districts.forEach( (d, i) => {
-      drawCircle(ctx, d.position, 5, colors[i])
       drawDistrictBlocks(ctx, d, colors[i], populationColorScale)
+      drawCircle(ctx, d.position, 7, d.population >= d.targetPopulation ? 'white' : 'black')
+      drawCircle(ctx, d.position, 5, colors[i])
     })
 
     let data = ctx.getImageData(0, 0, width, height)
     return transfer(data, [data.data.buffer])
   }
 
-  // getImageData(){
-  //   const width = this.width
-  //   const height = this.height
-  //   const canvas = new OffscreenCanvas(width, height)
-  //   const ctx = canvas.getContext('2d')
-  //
-  //   let untaken = 0
-  //   this.blocks.forEach(b => {
-  //     if ( b.isTaken ){ return }
-  //     untaken++
-  //     drawCircle(ctx, b.position, 1, 'white')
-  //   })
-  //
-  //   // console.log(`There are ${untaken} blocks left`, this.districts)
-  //
-  //   this.districts.forEach((district, i) => {
-  //     let color = this.colors[i].css()
-  //     district.taken.forEach(b => {
-  //       drawCircle(ctx, b.position, 1, color)
-  //     })
-  //   })
-  //
-  //   // draw district seed positions
-  //   this.seedPositions.forEach( (p, i) => {
-  //     drawCircle(ctx, p, 5, this.colors[i].css())
-  //   })
-  //
-  //   let data = ctx.getImageData(0, 0, width, height)
-  //   return transfer(data, [data.data.buffer])
-  // }
+  getRegionMap(){
+    const colorScale = chroma.scale('Paired')
+    const width = this.width
+    const height = this.height
+    const canvas = new OffscreenCanvas(width, height)
+    const ctx = canvas.getContext('2d')
+
+    const colors = colorScale.colors(this.seedCount, 'rgba')
+
+    const bbox = { xl: 0, yt: 0, xr: width, yb: height }
+
+    const sites = this.seeds.map(_.clone)
+    let diagram = voronoi.compute(sites, bbox)
+
+    for (let i = 0, l = this.seedCount; i < l; i++) {
+      let cell = diagram.cells[sites[i].voronoiId]
+      if (cell) {
+        let halfedges = cell.halfedges
+        let length = halfedges.length
+        if (length > 2) {
+          let points = []
+          for (let j = 0; j < length; j++) {
+            let v = halfedges[j].getEndpoint()
+            points.push(v)
+          }
+
+          drawPolygon(ctx, points, colors[i].luminance(0.6).css())
+        }
+      }
+    }
+
+    let maxPopulation = _.max(this.blocks.map(b => b.population))
+    let populationColorScale = chroma.scale(['black', 'white']).mode('lab').domain([0, maxPopulation])
+
+    this.districts.forEach( (d, i) => {
+      let color = colors[i].luminance(0.2)
+      drawDistrictBlocks(ctx, d, color, populationColorScale)
+      drawCircle(ctx, d.position, 7, d.population >= d.targetPopulation ? 'white' : 'black')
+      drawCircle(ctx, d.position, 5, color)
+    })
+
+    let data = ctx.getImageData(0, 0, width, height)
+    return transfer(data, [data.data.buffer])
+  }
 }

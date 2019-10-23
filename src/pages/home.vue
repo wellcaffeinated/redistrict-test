@@ -1,6 +1,6 @@
 <template lang="pug">
 .home
-  b-loading(:active="working > 0")
+  b-loading(:active="loading")
   .columns
     .column
       .canvas
@@ -22,6 +22,8 @@
           option(value="phi") Phi maps
       b-field
         b-button(@click="getOverlays") Draw Overlays
+      b-field
+        b-button(@click="drawVoronoi") Draw Voronoi
     b-field(grouped)
       b-field
         b-button(@click="run") Run
@@ -29,10 +31,13 @@
         b-button(@click="adjustSeeds") Adjust Seeds
       b-field
         b-button(@click="runUntilStable") Stablize Seeds
+      b-field
+        b-button.is-primary(@click="randomizeSeeds") Reshuffle Seeds
 </template>
 
 <script>
 import _minBy from 'lodash/minBy'
+import _throttle from 'lodash/throttle'
 import createWorker from '@/workers/main'
 import {
   distanceSq
@@ -48,6 +53,7 @@ export default {
   }
   , data: () => ({
     working: 0
+    , loading: false
     , seedIndex: -1
     , overlayMode: 'ranks'
     , overlays: null
@@ -68,6 +74,9 @@ export default {
     , overlayMode(){
       this.getOverlays()
     }
+    , working: _throttle(function(working){
+      this.loading = working > 0
+    }, 200, { leading: false })
   }
   , methods: {
     async init(){
@@ -119,40 +128,45 @@ export default {
       let district = await this.redistricter.getDistrict(this.seedIndex)
       this.districtInfo = district
     }
-    , async run(nodraw){
+    , async randomizeSeeds(){
       this.working++
+      await this.redistricter.randomizeSeeds()
+      await this.drawRegions()
+      this.working--
+    }
+    , async run(nodraw){
       this.overlays = null
       await this.redistricter.run()
       this.populationPercentDiff = await this.redistricter.getMaxPopulationDifferencePercentage()
       if ( nodraw !== true ){
         await this.drawRegions()
       }
-      this.working--
     }
     , async runUntilStable(){
-      this.working++
       const threshold = 1e-6
       do {
         await this.run(true)
+        await this.drawRegions()
         await this.adjustSeeds(true)
       } while ( this.seedMovement > threshold );
       await this.run(true)
       await this.drawRegions()
-      this.working--
     }
     , async adjustSeeds(nodraw){
-      this.working++
       this.seedMovement = await this.redistricter.adjustSeedPositions()
       this.seedCoords = await this.redistricter.getSeedPositions()
       if ( nodraw !== true ){
         await this.drawRegions()
       }
-      this.working--
     }
     , async drawRegions(){
-      this.working++
       this.regionsImage = await this.redistricter.getRegionMap()
       this.drawImage(this.$refs.canvas, this.regionsImage)
+    }
+    , async drawPhiRegions(){
+      this.working++
+      let voronoiImage = await this.redistricter.getPhiRegionMap()
+      this.drawImage(this.$refs.canvas, voronoiImage)
       this.working--
     }
     , async drawOverlays(){
