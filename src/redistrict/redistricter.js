@@ -1,9 +1,11 @@
 import { transfer } from 'comlink'
 import _ from 'lodash'
 import Voronoi from '@/lib/rhill-voronoi-core'
+import concaveman from 'concaveman'
 import {
   scale
   , indexWithLowestValue
+  , Tree
 } from '@/lib/util'
 import {
   lerp
@@ -19,9 +21,11 @@ import {
   , drawPolygon
 } from '@/lib/draw'
 
-const voronoi = new Voronoi()
-
 import chroma from 'chroma-js'
+
+const colorBrew = 'BrBG'
+
+const voronoi = new Voronoi()
 
 function calcK(point, seeds){
   return _.sumBy(seeds, s => distanceSq(s, point))
@@ -129,15 +133,25 @@ class Block {
 }
 
 class District {
-  constructor({ position, targetPopulation, blocks, index }){
+  constructor({ position, targetPopulation, blocks, index, useSorting }){
     this.position = position
     this.targetPopulation = targetPopulation
     this.index = index
+    this.useSorting = useSorting
 
     this.population = 0
     this.claimed = []
+    this.pools = []
 
     this.setBlocks(blocks)
+  }
+
+  clone(){
+    let dest = new District(this)
+    _.forOwn(this, (val, key) => {
+      dest[key] = _.cloneDeep(val)
+    })
+    return dest
   }
 
   setBlocks(blocks){
@@ -154,23 +168,34 @@ class District {
 
       let entry = { rank, phi, distance, block }
 
-      let idx = _.sortedIndexBy(pool, entry, rank === 0 ? 'phi' : 'distance')
-      pool.splice(idx, 0, entry)
+      if ( this.useSorting ){
+        let idx = _.sortedIndexBy(pool, entry, rank === 0 ? 'phi' : 'distance')
+        pool.splice(idx, 0, entry)
+      } else {
+        pool.push(entry)
+      }
     })
+  }
+
+  getRegionBlocks(){
+    return this.claimed.concat(this.pools[0])
   }
 
   availablePopulation(){
     return _.sumBy(this.pools[0], 'block.population')
   }
 
+  neededPopulation(){
+    return this.targetPopulation - this.population
+  }
+
   selectBlocksWithinRegion(){
     let pool = this.pools[0]
     let entry
-    while ( entry = pool.shift() ){
-      if ( this.population >= this.targetPopulation ){
-        break
-      }
-
+    while (
+      this.population < this.targetPopulation &&
+      (entry = pool.shift())
+    ){
       this.claim(entry)
     }
   }
@@ -181,13 +206,42 @@ class District {
     this.claimed.push(entry)
     block.assignTo(this)
   }
+
+  unclaim(entry){
+    let block = entry.block
+    let idx = _.indexOf(this.claimed, entry)
+    if ( idx === -1 ){
+      return false
+    }
+
+    this.claimed.splice(idx, 1)
+    this.population -= block.population
+    block.assignTo(null)
+    return true
+  }
+
+  // give another district a block
+  giveBlock(other){
+    if ( this.neededPopulation() >= 0 ){ return }
+    let mostWanted = _.minBy(this.getRegionBlocks(), entry => distanceSq(entry.block.position, other.position))
+
+    // remove from own pool, or claimed
+    if ( !this.unclaim(mostWanted) ){
+      _.pull(this.pools[0], mostWanted)
+    }
+
+    other.claim(mostWanted)
+    // top up self
+    this.selectBlocksWithinRegion()
+  }
 }
 
 export class Redistricter {
-  constructor({ blocks, seedCount, width, height }){
+  constructor({ blocks, seedCount, width, height, useSorting }){
     this.width = width
     this.height = height
     this.seedCount = seedCount
+    this.enableSorting(useSorting)
 
     // testing...
     if ( Number.isFinite(blocks) ){
@@ -197,6 +251,10 @@ export class Redistricter {
     this.blockData = blocks
 
     this.randomizeSeeds()
+  }
+
+  enableSorting(flag = true){
+    this.useSorting = flag
   }
 
   randomizeSeeds(){
@@ -242,23 +300,90 @@ export class Redistricter {
         , index
         , targetPopulation: targetPopulation + fudge
         , blocks: this.blocks
+        , useSorting: this.useSorting
       })
     })
   }
 
-  run(){
+  selectBlocks(){
     _.forEach(this.districts, district => {
       district.selectBlocksWithinRegion()
     })
+  }
+
+  getRedistributionTree(){
+    const added = []
+    const remaining = [].concat(this.districts) //this.districts.map(d => d.clone())
+    const first = _.maxBy(remaining, 'population')
+    const tree = Tree(first)
+    _.pull(remaining, first)
+    added.push(tree)
+    let branch = tree
+
+    while ( remaining.length ){
+      // get next nearest
+      let next = _.minBy(remaining, d => distanceSq(d.position, branch.node.position))
+      // remove it
+      _.pull(remaining, next)
+      // see which previous branch it's closest to
+      branch = _.minBy(added, b => distanceSq(b.node.position, next.position))
+      branch = branch.addBranch(next)
+      added.push(branch)
+    }
+
+    return tree
+  }
+
+  redistribute(){
+    // const startingPopDiff = this.getMaxPopulationDifferencePercentage()
+    const tree = this.getRedistributionTree()
+
+    tree.climb(branch => {
+      let district = branch.node
+      if ( !branch.branches.length ){ return }
+      // let children = _.sortBy(branch.branches, b => b.node.neededPopulation())
+      // children.reverse()
+      while (district.neededPopulation() < 0){
+        branch.branches.forEach(b => {
+          district.giveBlock(b.node)
+        })
+      }
+    })
+
+    // const districts = _.sortBy(tree.toArray(), 'index')
+    // const resultingPopDiff = this.getMaxPopulationDifferencePercentage(districts)
+    // if ( startingPopDiff < resultingPopDiff ){
+    //   // no improvement
+    //   return false
+    // }
+
+    // this.districts = districts
+    // this.blocks = _.reduce(this.districts, (blocks, d) => {
+    //   return blocks.concat(d.claimed)
+    // }, [])
+    return true
   }
 
   getSeedPositions(){
     return this.seeds
   }
 
-  getMaxPopulationDifferencePercentage(){
-    let min = _.minBy(this.districts, 'population').population
-    let max = _.maxBy(this.districts, 'population').population
+  getBlocks(){
+    return this.blocks
+  }
+
+  getNumUnchosenBlocks(){
+    let claimed = _.sumBy(this.districts, d => {
+      return d.claimed.length
+    })
+
+    return this.blocks.length - claimed
+  }
+
+  getMaxPopulationDifferencePercentage(districts){
+    districts = districts || this.districts
+    let min = _.minBy(districts, 'population').population
+    let max = _.maxBy(districts, 'population').population
 
     return 100 * (max - min) / (0.5 * (max + min))
   }
@@ -268,7 +393,7 @@ export class Redistricter {
   }
 
   getPhiMapFor(index){
-    const regionColors = chroma.scale('Paired').colors(this.seedCount, 'rgba')
+    const regionColors = chroma.scale(colorBrew).colors(this.seedCount, 'rgba')
     const width = this.width
     const height = this.height
     const canvas = new OffscreenCanvas(width, height)
@@ -308,7 +433,7 @@ export class Redistricter {
   }
 
   getRankMapFor(index){
-    const regionColors = chroma.scale('Paired').colors(this.seedCount, 'rgba')
+    const regionColors = chroma.scale(colorBrew).colors(this.seedCount, 'rgba')
     const width = this.width
     const height = this.height
     const canvas = new OffscreenCanvas(width, height)
@@ -364,7 +489,7 @@ export class Redistricter {
   }
 
   getPhiRegionMap(){
-    const colorScale = chroma.scale('Paired')
+    const colorScale = chroma.scale(colorBrew)
     const width = this.width
     const height = this.height
     const canvas = new OffscreenCanvas(width, height)
@@ -409,7 +534,7 @@ export class Redistricter {
   }
 
   getRegionMap(){
-    const colorScale = chroma.scale('Paired')
+    const colorScale = chroma.scale(colorBrew)
     const width = this.width
     const height = this.height
     const canvas = new OffscreenCanvas(width, height)
@@ -434,7 +559,7 @@ export class Redistricter {
             points.push(v)
           }
 
-          drawPolygon(ctx, points, colors[i].luminance(0.6).css())
+          drawPolygon(ctx, points, colors[i].css())
         }
       }
     }
@@ -443,7 +568,48 @@ export class Redistricter {
     let populationColorScale = chroma.scale(['black', 'white']).mode('lab').domain([0, maxPopulation])
 
     this.districts.forEach( (d, i) => {
-      let color = colors[i].luminance(0.2)
+      let color = colors[i]
+      if ( color.get('lab.l') > 50 ){
+        color = color.darken(2)
+      } else {
+        color = color.brighten(2)
+      }
+      drawDistrictBlocks(ctx, d, color, populationColorScale)
+      drawCircle(ctx, d.position, 7, d.population >= d.targetPopulation ? 'white' : 'black')
+      drawCircle(ctx, d.position, 5, color)
+    })
+
+    let data = ctx.getImageData(0, 0, width, height)
+    return transfer(data, [data.data.buffer])
+  }
+
+  getAssignmentMap(){
+    const colorScale = chroma.scale(colorBrew)
+    const width = this.width
+    const height = this.height
+    const canvas = new OffscreenCanvas(width, height)
+    const ctx = canvas.getContext('2d')
+
+    const colors = colorScale.colors(this.seedCount, 'rgba')
+
+    let maxPopulation = _.max(this.blocks.map(b => b.population))
+    let populationColorScale = chroma.scale(['black', 'white']).mode('lab').domain([0, maxPopulation])
+
+    this.districts.forEach( (d, i) => {
+      let blockLocations = d.claimed.map(entry => [entry.block.position.x, entry.block.position.y])
+      if ( !blockLocations.length ){ return }
+      let shape = concaveman(blockLocations)
+      let polygon = shape.map(([x, y]) => ({ x, y }))
+      drawPolygon(ctx, polygon, colors[i].css())
+    })
+
+    this.districts.forEach( (d, i) => {
+      let color = colors[i]
+      if ( color.get('lab.l') > 50 ){
+        color = color.darken(2)
+      } else {
+        color = color.brighten(2)
+      }
       drawDistrictBlocks(ctx, d, color, populationColorScale)
       drawCircle(ctx, d.position, 7, d.population >= d.targetPopulation ? 'white' : 'black')
       drawCircle(ctx, d.position, 5, color)

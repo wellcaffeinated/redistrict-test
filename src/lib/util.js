@@ -14,3 +14,33 @@ export function indexWithLowestValue( arr ){
   })
   return lowestIndex
 }
+
+class Branch {
+  constructor(node){
+    this.node = node
+    this.branches = []
+  }
+
+  addBranch(node){
+    let b = new Branch(node)
+    this.branches.push(b)
+    return b
+  }
+
+  climb(fn){
+    fn(this)
+    this.branches.forEach(b => b.climb(fn))
+  }
+
+  toArray(){
+    let arr = []
+    this.climb(b => {
+      arr.push(b.node)
+    })
+    return arr
+  }
+}
+
+export function Tree(node){
+  return new Branch(node)
+}
