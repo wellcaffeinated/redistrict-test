@@ -14,6 +14,7 @@ import {
   , getCentroid
   , getRandomPoints
   , RunningStatistics
+  , rndSimpleGaussian
 } from '@/lib/math'
 import {
   setPixel
@@ -55,15 +56,15 @@ function rankOfPoint(point, index, seeds){
   return _.findIndex(phiRanks, { index })
 }
 
-function getRandomCensusBlocks(n, width, height){
+function getRandomCensusBlocks(n, width, height, ruralPop = 10, cityPop = 400){
+  const dev = (cityPop + ruralPop) / 6
   let cities = getRandomPoints(10, width, height)
 
   return getRandomPoints(n, width, height).map( position => {
     let nearest = _.minBy(cities, s => distanceSq(position, s))
-    let d = distance(nearest, position)
-    let min = Math.max(100, scale(width, 0, d) * 5000)
-    let max = min + 1000
-    let population = _.random(min|0, max|0)
+    let distToCity = distance(nearest, position)
+    let meanPop = ruralPop + scale(width/4, 0, distToCity) * (cityPop - ruralPop)
+    let population = Math.max(rndSimpleGaussian(meanPop, dev), 0) | 0
 
     return {
       position
@@ -189,11 +190,11 @@ class District {
     return this.targetPopulation - this.population
   }
 
-  selectBlocksWithinRegion(){
+  selectBlocksWithinRegion(all = false){
     let pool = this.pools[0]
     let entry
     while (
-      this.population < this.targetPopulation &&
+      (all || this.population < this.targetPopulation) &&
       (entry = pool.shift())
     ){
       this.claim(entry)
@@ -335,6 +336,7 @@ export class Redistricter {
   }
 
   redistribute(){
+    this.districts.forEach(d => d.selectBlocksWithinRegion(true))
     // const startingPopDiff = this.getMaxPopulationDifferencePercentage()
     const tree = this.getRedistributionTree()
 
@@ -521,7 +523,7 @@ export class Redistricter {
     }
 
     let maxPopulation = _.max(this.blocks.map(b => b.population))
-    let populationColorScale = chroma.scale(['black', 'white']).mode('lab').domain([0, maxPopulation])
+    let populationColorScale = chroma.scale(['white', 'red']).mode('lab').domain([0, maxPopulation])
 
     this.districts.forEach( (d, i) => {
       drawDistrictBlocks(ctx, d, colors[i], populationColorScale)
@@ -565,7 +567,7 @@ export class Redistricter {
     }
 
     let maxPopulation = _.max(this.blocks.map(b => b.population))
-    let populationColorScale = chroma.scale(['black', 'white']).mode('lab').domain([0, maxPopulation])
+    let populationColorScale = chroma.scale(['white', 'red']).mode('lab').domain([0, maxPopulation])
 
     this.districts.forEach( (d, i) => {
       let color = colors[i]
@@ -593,7 +595,7 @@ export class Redistricter {
     const colors = colorScale.colors(this.seedCount, 'rgba')
 
     let maxPopulation = _.max(this.blocks.map(b => b.population))
-    let populationColorScale = chroma.scale(['black', 'white']).mode('lab').domain([0, maxPopulation])
+    let populationColorScale = chroma.scale(['white', 'red']).mode('lab').domain([0, maxPopulation])
 
     this.districts.forEach( (d, i) => {
       let blockLocations = d.claimed.map(entry => [entry.block.position.x, entry.block.position.y])

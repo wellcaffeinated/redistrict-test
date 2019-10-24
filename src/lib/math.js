@@ -89,3 +89,8 @@ export function RunningStatistics( initialData = [] ){
     , push
   }
 }
+
+export function rndSimpleGaussian(mean = 0, sigma = 1){
+  let g = Math.random() + Math.random() + Math.random()
+  return 2 * sigma * (g - 1) + mean - 3
+}

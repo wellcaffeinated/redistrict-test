@@ -204,7 +204,8 @@ export default {
     , async redistribute(){
       let popDiff = this.populationPercentDiff
       let lastDiffs = []
-      for (;;){
+      let maxRounds = 100
+      while (maxRounds--){
         await this.redistricter.redistribute()
         await this.getInfo()
         popDiff = this.populationPercentDiff
