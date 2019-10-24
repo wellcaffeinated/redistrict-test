@@ -267,6 +267,7 @@ export default {
     top: 0
     left: 0
   .selected-block
+    pointer-events: none
     position: absolute
     z-index: 2
     width: 4px

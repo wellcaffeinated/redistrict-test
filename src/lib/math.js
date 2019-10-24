@@ -70,8 +70,12 @@ export function RunningStatistics( initialData = [] ){
     return m
   }
 
-  function stddev(){
+  function variance(){
     return s/(n-1)
+  }
+
+  function deviation(){
+    return Math.sqrt(variance())
   }
 
   function max(){ return _max }
@@ -83,7 +87,8 @@ export function RunningStatistics( initialData = [] ){
 
   return {
     mean
-    , stddev
+    , variance
+    , deviation
     , max
     , min
     , push
