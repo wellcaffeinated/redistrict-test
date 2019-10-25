@@ -31,7 +31,8 @@ export default class District {
     // pools is array of arrays. First contains blocks in own region, ordered by phi (small->large)
     // others contain other regions sorted by distance to this district (small->large)
     this.pools = []
-    _.forEach(blocks, block => {
+    for (let i = 0, l = blocks.length; i < l; i++){
+      let block = blocks[i]
       let rank = block.getPreferenceRankBySeedIndex(index)
       let phi = block.getPhiBySeedIndex(index)
       let distance = block.getDistanceToSeed(index)
@@ -45,7 +46,7 @@ export default class District {
       } else {
         pool.push(entry)
       }
-    })
+    }
   }
 
   getRegionBlocks(){
@@ -61,7 +62,7 @@ export default class District {
   }
 
   selectBlocksWithinRegion(all = false){
-    let pool = this.pools[0]
+    let pool = this.pools[0] || []
     let entry
     while (
       (all || this.population < this.targetPopulation) &&
@@ -94,6 +95,7 @@ export default class District {
   // give another district a block
   giveBlock(other){
     if ( this.neededPopulation() >= 0 ){ return }
+    // TODO: optimize this line
     let mostWanted = _.minBy(this.getRegionBlocks(), entry => distanceSq(entry.block.position, other.position))
 
     // remove from own pool, or claimed

@@ -14,7 +14,8 @@ export function distance(p, q){
   return Math.sqrt(distanceSq(p, q))
 }
 
-export function getCentroid( coords = [], weights = [] ){
+export function getCentroid( coords = [], weights ){
+  const hasArrays = Array.isArray(coords[0])
   let x = 0
   let y = 0
   let l = coords.length
@@ -23,8 +24,13 @@ export function getCentroid( coords = [], weights = [] ){
   for (let i = 0; i < l; i++){
     let w = weights ? weights[i] : 1
     let p = coords[i]
-    x += p.x * w
-    y += p.y * w
+    if ( hasArrays ){
+      x += p[0] * w
+      y += p[1] * w
+    } else {
+      x += p.x * w
+      y += p.y * w
+    }
     totalWeight += w
   }
 
@@ -34,10 +40,16 @@ export function getCentroid( coords = [], weights = [] ){
   return {x, y}
 }
 
-export function getRandomPoints(n, width, height){
+export function getRandomPoints(n, widthOrBounds, height){
+  let bounds = height === undefined ? widthOrBounds : {
+    x1: 0
+    , y1: 0
+    , x2: widthOrBounds
+    , y2: height
+  }
   return _.times(n).map(() => {
-    let x = Math.random() * width
-    let y = Math.random() * height
+    let x = lerp(bounds.x1, bounds.x2, Math.random())
+    let y = lerp(bounds.y1, bounds.y2, Math.random())
     return { x, y }
   })
 }
@@ -46,8 +58,9 @@ export function RunningStatistics( initialData = [] ){
   let m = 0
   let s = 0
   let n = 0
-  let _max = null
-  let _min = null
+  let _max = Number.NEGATIVE_INFINITY
+  let _min = Number.POSITIVE_INFINITY
+  let total = 0
 
   // Push a value to a running average calculation.
   // see [http://www.johndcook.com/blog/standard_deviation]
@@ -64,6 +77,7 @@ export function RunningStatistics( initialData = [] ){
     // max / min
     _max = Math.max(v, _max)
     _min = Math.min(v, _min)
+    total += v
   }
 
   function mean(){
@@ -80,6 +94,8 @@ export function RunningStatistics( initialData = [] ){
 
   function max(){ return _max }
   function min(){ return _min }
+  function sum(){ return total }
+  function size(){ return n }
 
   for ( let i = 0, l = initialData.length; i < l; i++ ){
     push(initialData[i])
@@ -89,6 +105,8 @@ export function RunningStatistics( initialData = [] ){
     mean
     , variance
     , deviation
+    , sum
+    , size
     , max
     , min
     , push

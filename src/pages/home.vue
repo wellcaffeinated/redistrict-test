@@ -118,12 +118,13 @@ export default {
       this.working++
       const canvas = this.$refs.canvas
       this.redistricter = await new worker.Redistricter({
-        blocks: this.numBlocks | 0
+        blocks: 0 //this.numBlocks | 0
         , seedCount: this.numDistricts | 0
         , width: canvas.width
         , height: canvas.height
         , useSorting: this.useSorting
       })
+      await this.redistricter.fetchBlocksFromShapefile('/north-carolina/tabblock2010_37_pophu.shp', { limit: -1 })
       this.seedCoords = await this.redistricter.getSeedPositions()
       this.blocks = await this.redistricter.getBlocks()
       await this.drawRegions()

@@ -6,6 +6,7 @@ import chroma from 'chroma-js'
 import {
   scale
   , Tree
+  , getBoundingBox
 } from '@/lib/util'
 import {
   distance
@@ -22,6 +23,7 @@ import {
 } from '@/lib/draw'
 import Block from './block'
 import District from './district'
+import { fetchBlockData } from './block-loader'
 
 const colorBrew = 'BrBG'
 const voronoi = new Voronoi()
@@ -55,28 +57,43 @@ function rankOfPoint(point, index, seeds){
 function getRandomCensusBlocks(n, width, height, ruralPop = 10, cityPop = 400){
   const dev = (cityPop + ruralPop) / 6
   let cities = getRandomPoints(10, width, height)
+  let statistics = RunningStatistics()
 
-  return getRandomPoints(n, width, height).map( position => {
+  let blockData = getRandomPoints(n, width, height).map( position => {
     let nearest = _.minBy(cities, s => distanceSq(position, s))
     let distToCity = distance(nearest, position)
     let meanPop = ruralPop + scale(width/4, 0, distToCity) * (cityPop - ruralPop)
     let population = Math.max(rndSimpleGaussian(meanPop, dev), 0) | 0
+
+    statistics.push(population)
 
     return {
       position
       , population
     }
   })
+
+  return {
+    statistics
+    , blockData
+  }
 }
 
-function drawDistrictBlocks(ctx, district, color, populationColorScale){
+function projectionMap(point, from, to){
+  return {
+    x: scale(from.x1, from.x2, point.x) * to.x2 + to.x1
+    , y: scale(from.y1, from.y2, point.y) * to.y2 + to.y1
+  }
+}
+
+function drawDistrictBlocks(ctx, district, color, populationColorScale, pointMap){
   _.forEach(district.pools[0], entry => {
-    let pos = entry.block.position
-    let color = populationColorScale ? populationColorScale(entry.block.population) : 'white'
+    let pos = pointMap(entry.block.position)
+    let color = populationColorScale ? populationColorScale(entry.block.population) : 'rgba(0, 0, 0, 0.8)'
     drawCircle(ctx, pos, 1, color)
   })
   _.forEach(district.claimed, entry => {
-    let pos = entry.block.position
+    let pos = pointMap(entry.block.position)
     drawCircle(ctx, pos, 1, color)
   })
 }
@@ -89,13 +106,43 @@ export class Redistricter {
     this.preferenceFunction = calcPhi
     this.enableSorting(useSorting)
 
-    // testing...
-    if ( Number.isFinite(blocks) ){
-      blocks = getRandomCensusBlocks(blocks, width, height)
+    this.imageBounds = {
+      x1: 0
+      , y1: 0
+      , x2: width
+      , y2: height
+      , width
+      , height
     }
 
-    this.blockData = blocks
+    if ( Number.isFinite(blocks) ){
+      // for testing...
+      let result = getRandomCensusBlocks(blocks, width, height)
+      this.blockStatistics = result.statistics
+      this.blockData = result.blockData
+      this.bounds = this.getBlockDataBounds(this.blockData)
+    } else {
+      this.blockData = blocks || []
+      this.blockStatistics = RunningStatistics()
+      blocks.forEach(b => this.blockStatistics.push(b.population))
+      this.bounds = this.getBlockDataBounds(this.blockData)
+    }
 
+    this.randomizeSeeds()
+  }
+
+  getBlockDataBounds(blockData){
+    return getBoundingBox(blockData.map(b => b.position))
+  }
+
+  async fetchBlocksFromShapefile(url, options){
+    let result = await fetchBlockData(url, options)
+    this.blockStatistics = result.statistics
+    this.blockData = result.blockData
+    this.bounds = this.getBlockDataBounds(this.blockData)
+    // console.log(this.bounds)
+    console.log(`fetched ${result.statistics.size()} blocks with total population ${result.statistics.sum()}`)
+    // console.log(this.blockData)
     this.randomizeSeeds()
   }
 
@@ -104,12 +151,17 @@ export class Redistricter {
   }
 
   randomizeSeeds(){
-    this.seeds = getRandomPoints(this.seedCount, this.width, this.height)
+    this.seeds = getRandomPoints(this.seedCount, this.bounds)
     this.restart()
   }
 
   restart(){
-    this.blocks = this.blockData.map(data => new Block({ ...data, seeds: this.seeds, calcPhi: this.preferenceFunction }))
+    this.blocks = this.blockData.map(data => new Block({
+      position: data.position
+      , population: data.population
+      , seeds: this.seeds
+      , calcPhi: this.preferenceFunction
+    }))
     this.totalPopulation = _.sumBy(this.blocks, b => b.population)
 
     this.initDistricts()
@@ -124,6 +176,7 @@ export class Redistricter {
         weights.push(entry.block.population)
         entry.block.district = null
       })
+      if (!points.length){ return district.position }
       return getCentroid(points, weights)
     })
 
@@ -203,7 +256,7 @@ export class Redistricter {
   }
 
   getBlocks(){
-    return this.blocks.map(b => _.omitBy(b, _.isFunction))
+    return this.blockData
   }
 
   getNumUnchosenBlocks(){
@@ -223,12 +276,17 @@ export class Redistricter {
   }
 
   getDistrict(index){
-    return this.districts[index]
+    return _.omitBy(_.omit(this.districts[index], ['blocks', 'claimed', 'pools']), _.isFunction)
   }
 
   //
   // Drawing...
   //
+
+  toCanvasPoint(p){
+    return projectionMap(p, this.bounds, this.imageBounds)
+  }
+
   getPhiMapFor(index){
     const regionColors = chroma.scale(colorBrew).colors(this.seedCount, 'rgba')
     const width = this.width
@@ -258,11 +316,13 @@ export class Redistricter {
       let range = stats.min() - stats.max()
       let alpha = (phi - stats.max())/range
       let color = scale(alpha)
-      setPixel(ctx, point.x, point.y, color.css())
+
+      let p = this.toCanvasPoint(point)
+      setPixel(ctx, p.x, p.y, color.css())
     }
 
     this.seeds.forEach( (s, i) =>
-      drawCircle(ctx, s, 5, regionColors[i].css())
+      drawCircle(ctx, toCanvasPoint(s), 5, regionColors[i].css())
     )
 
     let data = ctx.getImageData(0, 0, width, height)
@@ -303,7 +363,8 @@ export class Redistricter {
       // let color = regionColors[index].luminance(alpha).darken(rank)
       let scale = scales[index][rank]
       let color = scale(alpha)
-      setPixel(ctx, point.x, point.y, color.css())
+      let p = this.toCanvasPoint(point)
+      setPixel(ctx, p.x, p.y, color.css())
     }
 
     // const colors = colorScale.colors(this.seedCount, 'rgba')
@@ -318,7 +379,7 @@ export class Redistricter {
     // }
 
     this.seeds.forEach( (s, i) =>
-      drawCircle(ctx, s, 5, regionColors[i].css())
+      drawCircle(ctx, this.toCanvasPoint(s), 5, regionColors[i].css())
     )
 
     let data = ctx.getImageData(0, 0, width, height)
@@ -354,17 +415,11 @@ export class Redistricter {
       let range = stats.min() - stats.max()
       let alpha = (phi - stats.max())/range
       let color = scales[index](alpha) // colors[index].luminance(alpha)
-      setPixel(ctx, point.x, point.y, color.css())
+      let p = this.toCanvasPoint(point)
+      setPixel(ctx, p.x, p.y, color.css())
     }
 
-    let maxPopulation = _.max(this.blocks.map(b => b.population))
-    let populationColorScale = chroma.scale(['white', 'red']).mode('lab').domain([0, maxPopulation])
-
-    this.districts.forEach( (d, i) => {
-      drawDistrictBlocks(ctx, d, colors[i], populationColorScale)
-      drawCircle(ctx, d.position, 7, d.population >= d.targetPopulation ? 'white' : 'black')
-      drawCircle(ctx, d.position, 5, colors[i])
-    })
+    this.drawBlocksAndSeeds(ctx, colors, false, true)
 
     let data = ctx.getImageData(0, 0, width, height)
     return transfer(data, [data.data.buffer])
@@ -379,7 +434,11 @@ export class Redistricter {
 
     const colors = colorScale.colors(this.seedCount, 'rgba')
 
-    const bbox = { xl: 0, yt: 0, xr: width, yb: height }
+    const bbox = { xl: this.bounds.x1
+      , yt: this.bounds.y1
+      , xr: this.bounds.x2
+      , yb: this.bounds.y2
+    }
 
     const sites = this.seeds.map(_.clone)
     let diagram = voronoi.compute(sites, bbox)
@@ -396,25 +455,12 @@ export class Redistricter {
             points.push(v)
           }
 
-          drawPolygon(ctx, points, colors[i].css())
+          drawPolygon(ctx, points.map(p => this.toCanvasPoint(p)), colors[i].css())
         }
       }
     }
 
-    let maxPopulation = _.max(this.blocks.map(b => b.population))
-    let populationColorScale = chroma.scale(['white', 'red']).mode('lab').domain([0, maxPopulation])
-
-    this.districts.forEach( (d, i) => {
-      let color = colors[i]
-      if ( color.get('lab.l') > 50 ){
-        color = color.darken(2)
-      } else {
-        color = color.brighten(2)
-      }
-      drawDistrictBlocks(ctx, d, color, populationColorScale)
-      drawCircle(ctx, d.position, 7, d.population >= d.targetPopulation ? 'white' : 'black')
-      drawCircle(ctx, d.position, 5, color)
-    })
+    this.drawBlocksAndSeeds(ctx, colors, true)
 
     let data = ctx.getImageData(0, 0, width, height)
     return transfer(data, [data.data.buffer])
@@ -429,30 +475,48 @@ export class Redistricter {
 
     const colors = colorScale.colors(this.seedCount, 'rgba')
 
-    let maxPopulation = _.max(this.blocks.map(b => b.population))
-    let populationColorScale = chroma.scale(['white', 'red']).mode('lab').domain([0, maxPopulation])
-
     this.districts.forEach( (d, i) => {
       let blockLocations = d.claimed.map(entry => [entry.block.position.x, entry.block.position.y])
       if ( !blockLocations.length ){ return }
       let shape = concaveman(blockLocations)
-      let polygon = shape.map(([x, y]) => ({ x, y }))
+      let polygon = shape.map(([x, y]) => this.toCanvasPoint({x, y}))
       drawPolygon(ctx, polygon, colors[i].css())
     })
 
-    this.districts.forEach( (d, i) => {
-      let color = colors[i]
-      if ( color.get('lab.l') > 50 ){
-        color = color.darken(2)
-      } else {
-        color = color.brighten(2)
-      }
-      drawDistrictBlocks(ctx, d, color, populationColorScale)
-      drawCircle(ctx, d.position, 7, d.population >= d.targetPopulation ? 'white' : 'black')
-      drawCircle(ctx, d.position, 5, color)
-    })
+    this.drawBlocksAndSeeds(ctx, colors, true)
 
     let data = ctx.getImageData(0, 0, width, height)
     return transfer(data, [data.data.buffer])
+  }
+
+  drawBlocksAndSeeds(ctx, colors, useHighlightColors, usePopulationColorScale){
+    let populationColorScale = false
+
+    if ( usePopulationColorScale ){
+      let maxPopulation = this.blockStatistics.max()
+      populationColorScale = chroma.scale(['white', 'red']).mode('lab').domain([0, maxPopulation])
+    }
+
+    let blockColors = colors.map(color => {
+      if ( !useHighlightColors ){ return color.css() }
+      if ( color.get('lab.l') > 50 ){
+        return color.darken(2).css()
+      } else {
+        return color.brighten(2).css()
+      }
+    })
+
+    this.districts.forEach( (d, i) => {
+      let color = blockColors[i]
+      drawDistrictBlocks(ctx, d, color, populationColorScale, this.toCanvasPoint.bind(this))
+    })
+
+    this.districts.forEach( (d, i) => {
+      let pos = this.toCanvasPoint(d.position)
+      let color = blockColors[i]
+
+      drawCircle(ctx, pos, 7, d.population >= d.targetPopulation ? 'white' : 'black')
+      drawCircle(ctx, pos, 5, color)
+    })
   }
 }

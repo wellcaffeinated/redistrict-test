@@ -26,6 +26,11 @@ export default class Block {
       .sortBy('phi')
       .map(el => el.index)
       .value()
+
+    this.ranksBySeedIndex = _.times(
+      this.seedPreferenceOrder.length
+      , index => this.seedPreferenceOrder.indexOf(index)
+    )
   }
 
   assignTo(district){
@@ -45,7 +50,8 @@ export default class Block {
   }
 
   getPreferenceRankBySeedIndex(index){
-    return this.seedPreferenceOrder.indexOf(index)
+    return this.ranksBySeedIndex[index]
+    // return this.seedPreferenceOrder.indexOf(index)
   }
 
   getSeedIndexByPreferenceRank(rank){
