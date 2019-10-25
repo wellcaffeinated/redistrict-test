@@ -1,9 +1,9 @@
 <template lang="pug">
 .home
-  b-loading(:active="loading")
   .columns
     .column
       .canvas
+        //- b-loading(:active="loading", :is-full-page="false")
         .selected-block(v-if="selectedBlock", :style="{ top: selectedBlock.position.y + 'px', left: selectedBlock.position.x + 'px' }")
         canvas(ref="canvas", width="500", height="500")
         canvas(ref="canvasTop", width="500", height="500", @mousemove="onMouseMove", @mouseleave="seedIndex = -1")
@@ -27,7 +27,7 @@
       b-field(label="Number of Districts")
         b-input(v-model="numDistricts", type="number")
       b-field
-        b-button.is-primary(@click="init") Restart
+        b-button.is-primary(@click="init", :loading="isWorking") Restart
     b-field(grouped)
       b-field
         b-select(v-model="overlayMode")
@@ -38,22 +38,26 @@
       b-field
         b-button(@click="drawPhiRegions") Draw Phi Gradients
     b-field(grouped)
-      b-switch(v-model="useSorting") Use Sorting
-      b-switch(v-model="showAssignmentRegions") Show Assignment Regions
+      b-field
+        b-switch(v-model="useSorting") Use Sorting
+      b-field
+        b-switch(v-model="showAssignmentRegions") Show Assignment Regions
     b-field(grouped)
       b-field
-        b-button(@click="selectBlocks") Select Blocks
+        b-button(@click="selectBlocks", :loading="isWorking") Select Blocks
       b-field
-        b-button(@click="adjustSeeds") Adjust Seeds
+        b-button(@click="adjustSeeds", :loading="isWorking") Adjust Seeds
       b-field
-        b-button(@click="runUntilStable") Stablize Seeds
+        b-button(@click="runUntilStable", :loading="isWorking") Stablize Seeds
       b-field
-        b-button(@click="redistribute") Redistribute
+        b-button(@click="redistribute", :loading="isWorking") Redistribute
       b-field
-        b-button.is-primary(@click="randomizeSeeds") Reshuffle Seeds
+        b-button.is-primary(@click="randomizeSeeds", :loading="isWorking") Reshuffle Seeds
     b-field(grouped)
       b-field
-        b-button.is-primary.is-large(@click="run") Redistrict!
+        b-button.is-primary.is-large(@click="run", :loading="isWorking") Redistrict!
+
+  pre.status-log(ref="log") {{ statusLog }}
 </template>
 
 <script>
@@ -76,6 +80,7 @@ export default {
   , data: () => ({
     working: 0
     , loading: false
+    , statusLog: ''
     , numBlocks: 2000
     , numDistricts: 5
     , useSorting: true
@@ -91,6 +96,9 @@ export default {
   })
   , mounted(){
     this.init()
+  }
+  , computed: {
+    isWorking(){ return this.working > 0 }
   }
   , watch: {
     seedIndex(index){
@@ -114,8 +122,19 @@ export default {
     }, 200, { leading: false })
   }
   , methods: {
-    async init(){
+    log(msg){
+      if ( msg === true ){
+        msg = 'done\n'
+      } else if ( msg === false ){
+        msg = 'FAILED\n'
+      }
+      this.statusLog += msg
+      let container = this.$refs.log
+      container.scrollTop = container.scrollHeight
+    }
+    , async init(){
       this.working++
+      this.log('RESTART\n')
       const canvas = this.$refs.canvas
       this.redistricter = await new worker.Redistricter({
         blocks: 0 //this.numBlocks | 0
@@ -124,9 +143,13 @@ export default {
         , height: canvas.height
         , useSorting: this.useSorting
       })
-      await this.redistricter.fetchBlocksFromShapefile('/north-carolina/tabblock2010_37_pophu.shp', { limit: -1 })
+      this.log('Fetching Blocks... ')
+      await this.redistricter.fetchBlocksFromShapefile('/north-carolina/tabblock2010_37_pophu.shp', { limit: 100 })
+      this.log(true)
+      this.log('Getting block coords... ')
       this.seedCoords = await this.redistricter.getSeedPositions()
       this.blocks = await this.redistricter.getBlocks()
+      this.log(true)
       await this.drawRegions()
       // await this.getOverlays()
       // await this.drawOverlays()
@@ -179,12 +202,16 @@ export default {
       this.numUnchosenBlocks = await this.redistricter.getNumUnchosenBlocks()
     }
     , async selectBlocks(nodraw){
+      this.working++
+      this.log('Selecting blocks... ')
       this.overlays = null
       await this.redistricter.selectBlocks()
       await this.getInfo()
+      this.log(true)
       if ( nodraw !== true ){
         await this.drawRegions()
       }
+      this.working--
     }
     , async runUntilStable(){
       const threshold = 1e-6
@@ -195,21 +222,29 @@ export default {
       await this.selectBlocks()
     }
     , async adjustSeeds(nodraw){
+      this.working++
+      this.log('Adjusting seed positions... ')
       this.seedMovement = await this.redistricter.adjustSeedPositions()
       this.seedCoords = await this.redistricter.getSeedPositions()
       this.blocks = await this.redistricter.getBlocks()
+      this.log(true)
       if ( nodraw !== true ){
         await this.drawRegions()
       }
+      this.working--
     }
     , async redistribute(){
+      this.working++
       let popDiff = this.populationPercentDiff
       let lastDiffs = []
-      let maxRounds = 100
-      while (maxRounds--){
+      const maxRounds = 100
+      let round = 0
+      while ((round++) < maxRounds){
+        this.log(`Redistributing blocks (round ${round})...`)
         await this.redistricter.redistribute()
         await this.getInfo()
         popDiff = this.populationPercentDiff
+        this.log(true)
         await this.drawRegions()
         if ( popDiff < 2 ){
           if ( lastDiffs.length > 10 ){
@@ -225,8 +260,10 @@ export default {
           lastDiffs.push(popDiff)
         }
       }
+      this.working--
     }
     , async drawRegions(){
+      this.log('Drawing regions... ')
       if ( this.showAssignmentRegions ){
         this.regionsImage = await this.redistricter.getAssignmentMap()
       } else {
@@ -234,11 +271,14 @@ export default {
       }
 
       this.drawImage(this.$refs.canvas, this.regionsImage)
+      this.log(true)
     }
     , async drawPhiRegions(){
       this.working++
+      this.log('Drawing phi regions... ')
       let voronoiImage = await this.redistricter.getPhiRegionMap()
       this.drawImage(this.$refs.canvas, voronoiImage)
+      this.log(true)
       this.working--
     }
     , async drawOverlays(){
@@ -251,8 +291,12 @@ export default {
       this.working--
     }
     , async run(){
+      let start = Date.now()
+      this.log('Starting redistrict process\n')
       await this.runUntilStable()
       await this.redistribute()
+      let execTime = (Date.now() - start)/1000
+      this.log(`Finished redistricting in ${execTime.toFixed(3)}s`)
     }
   }
 }
@@ -279,4 +323,12 @@ export default {
     background: red
 canvas
   border: 1px solid rgba(255, 255, 255, 0.3)
+.status-log
+  font-family: monospace
+  border: 1px solid $grey
+  border-radius: 3px
+  margin: 1em 0
+  height: 400px
+  overflow-y: auto
+  box-shadow: inset 0px 1px 5px black
 </style>

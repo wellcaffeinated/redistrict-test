@@ -162,7 +162,7 @@ export class Redistricter {
       , seeds: this.seeds
       , calcPhi: this.preferenceFunction
     }))
-    this.totalPopulation = _.sumBy(this.blocks, b => b.population)
+    this.totalPopulation = this.blockStatistics.sum()
 
     this.initDistricts()
   }
@@ -434,7 +434,18 @@ export class Redistricter {
 
     const colors = colorScale.colors(this.seedCount, 'rgba')
 
-    const bbox = { xl: this.bounds.x1
+    // WTF isn't this working
+    // let canvasScale = Math.min(this.imageBounds.width, this.imageBounds.height)
+    // let dim = Math.max(this.bounds.width, this.bounds.height)
+    // canvasScale /= dim
+    // let xt = dim/2 + this.bounds.x1
+    // let yt = dim/2 + this.bounds.y1
+    // ctx.transform(1, 0, 0, 1, canvasScale * xt, canvasScale * yt)
+    // ctx.transform(canvasScale, 0, 0, -canvasScale, 0, 0)
+    // ctx.transform(1, 0, 0, 1, -xt - this.bounds.x1, -yt + this.bounds.y1)
+
+    const bbox = {
+      xl: this.bounds.x1
       , yt: this.bounds.y1
       , xr: this.bounds.x2
       , yb: this.bounds.y2
@@ -483,10 +494,30 @@ export class Redistricter {
       drawPolygon(ctx, polygon, colors[i].css())
     })
 
-    this.drawBlocksAndSeeds(ctx, colors, true)
+    // this.drawBlocksAndSeeds(ctx, colors, true)
+    this.drawSeeds(ctx, colors, true)
 
     let data = ctx.getImageData(0, 0, width, height)
     return transfer(data, [data.data.buffer])
+  }
+
+  drawSeeds(ctx, colors, useHighlightColors){
+    let blockColors = colors.map(color => {
+      if ( !useHighlightColors ){ return color.css() }
+      if ( color.get('lab.l') > 50 ){
+        return color.darken(2).css()
+      } else {
+        return color.brighten(2).css()
+      }
+    })
+
+    this.districts.forEach( (d, i) => {
+      let pos = this.toCanvasPoint(d.position)
+      let color = blockColors[i]
+
+      drawCircle(ctx, pos, 7, d.population >= d.targetPopulation ? 'white' : 'black')
+      drawCircle(ctx, pos, 5, color)
+    })
   }
 
   drawBlocksAndSeeds(ctx, colors, useHighlightColors, usePopulationColorScale){

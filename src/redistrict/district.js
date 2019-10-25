@@ -27,6 +27,7 @@ export default class District {
 
   setBlocks(blocks){
     const index = this.index
+    // TODO: optimize this function
 
     // pools is array of arrays. First contains blocks in own region, ordered by phi (small->large)
     // others contain other regions sorted by distance to this district (small->large)
