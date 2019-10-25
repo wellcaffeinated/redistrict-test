@@ -19,7 +19,7 @@
 </template>
 
 <script>
-import _times from 'lodash/times'
+// import _times from 'lodash/times'
 import createWorker from '@/workers/main'
 
 const worker = createWorker()
@@ -78,8 +78,6 @@ export default {
       this.working = true
       const canvas = this.$refs.regionCanvas
       const ctx = canvas.getContext('2d')
-      const width = canvas.width
-      const height = canvas.height
       let regionData = await drawWorker.getImageData(canvas.width, canvas.height, this.seeds.positions, this.seeds.weights)
       ctx.putImageData(regionData, 0, 0)
       this.working = false

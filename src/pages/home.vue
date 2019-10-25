@@ -22,13 +22,6 @@
         | population: {{ selectedBlock.population }}
   .controls
     b-field(grouped)
-      b-field(label="Number of Blocks")
-        b-input(v-model="numBlocks", type="number")
-      b-field(label="Number of Districts")
-        b-input(v-model="numDistricts", type="number")
-      b-field
-        b-button.is-primary(@click="init", :loading="isWorking") Restart
-    b-field(grouped)
       b-field
         b-select(v-model="overlayMode")
           option(value="ranks") Rank maps
@@ -38,6 +31,17 @@
       b-field
         b-button(@click="drawPhiRegions") Draw Phi Gradients
     b-field(grouped)
+      b-field
+        b-button.is-warning(@click="restart", :loading="isWorking") Restart
+      b-field
+        b-switch(v-model="useTestData") Use Test Data
+      b-field
+        b-input(v-model="numBlocks", type="number")
+    b-field(grouped)
+      b-field(label="Number of Districts")
+        b-input(v-model="numDistricts", type="number")
+
+    b-field.is-marginless(grouped)
       b-field
         b-switch(v-model="useSorting") Use Sorting
       b-field
@@ -81,6 +85,8 @@ export default {
     working: 0
     , loading: false
     , statusLog: ''
+
+    , useTestData: false
     , numBlocks: 2000
     , numDistricts: 5
     , useSorting: true
@@ -134,7 +140,6 @@ export default {
     }
     , async init(){
       this.working++
-      this.log('RESTART\n')
       const canvas = this.$refs.canvas
       this.redistricter = await new worker.Redistricter({
         blocks: 0 //this.numBlocks | 0
@@ -143,16 +148,31 @@ export default {
         , height: canvas.height
         , useSorting: this.useSorting
       })
-      this.log('Fetching Blocks... ')
-      await this.redistricter.fetchBlocksFromShapefile('/north-carolina/tabblock2010_37_pophu.shp', { limit: 100 })
+      await this.restart()
+      // await this.getOverlays()
+      // await this.drawOverlays()
+      this.working--
+    }
+    , async restart(){
+      this.working++
+      this.log('RESTART\n')
+      await this.redistricter.setSeedCount(this.numDistricts | 0)
+
+      if ( this.useTestData ){
+        this.log('Initializing test blocks... ')
+        await this.redistricter.useTestData(this.numBlocks | 0)
+      } else {
+        this.log('Fetching Blocks... ')
+        await this.redistricter.fetchBlocksFromShapefile('/north-carolina/tabblock2010_37_pophu.shp', { limit: 10000 })
+      }
+
       this.log(true)
+
       this.log('Getting block coords... ')
       this.seedCoords = await this.redistricter.getSeedPositions()
       this.blocks = await this.redistricter.getBlocks()
       this.log(true)
       await this.drawRegions()
-      // await this.getOverlays()
-      // await this.drawOverlays()
       this.working--
     }
     , async getOverlays(){

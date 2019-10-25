@@ -117,17 +117,25 @@ export class Redistricter {
 
     if ( Number.isFinite(blocks) ){
       // for testing...
-      let result = getRandomCensusBlocks(blocks, width, height)
-      this.blockStatistics = result.statistics
-      this.blockData = result.blockData
-      this.bounds = this.getBlockDataBounds(this.blockData)
+      this.useTestBlocks(blocks)
     } else {
       this.blockData = blocks || []
       this.blockStatistics = RunningStatistics()
       blocks.forEach(b => this.blockStatistics.push(b.population))
       this.bounds = this.getBlockDataBounds(this.blockData)
+      this.randomizeSeeds()
     }
+  }
 
+  setSeedCount(n){
+    this.seedCount = n
+  }
+
+  useTestBlocks(n){
+    let result = getRandomCensusBlocks(n, this.width, this.height)
+    this.blockStatistics = result.statistics
+    this.blockData = result.blockData
+    this.bounds = this.getBlockDataBounds(this.blockData)
     this.randomizeSeeds()
   }
 
