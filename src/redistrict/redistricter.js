@@ -131,6 +131,10 @@ export class Redistricter {
     this.seedCount = n
   }
 
+  getBlockStats(){
+    return this.blockStatistics.toObject()
+  }
+
   useTestBlocks(n){
     let result = getRandomCensusBlocks(n, this.width, this.height)
     this.blockStatistics = result.statistics
@@ -330,7 +334,7 @@ export class Redistricter {
     }
 
     this.seeds.forEach( (s, i) =>
-      drawCircle(ctx, toCanvasPoint(s), 5, regionColors[i].css())
+      drawCircle(ctx, this.toCanvasPoint(s), 5, regionColors[i].css())
     )
 
     let data = ctx.getImageData(0, 0, width, height)
@@ -533,7 +537,7 @@ export class Redistricter {
 
     if ( usePopulationColorScale ){
       let maxPopulation = this.blockStatistics.max()
-      populationColorScale = chroma.scale(['white', 'red']).mode('lab').domain([0, maxPopulation])
+      populationColorScale = chroma.scale(['rgba(255,255,255,0.4)', 'red']).mode('lab').domain([0, maxPopulation])
     }
 
     let blockColors = colors.map(color => {

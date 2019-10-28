@@ -1,6 +1,7 @@
 import _ from 'lodash'
 import {
   distanceSq
+  , getCentroid
 } from '@/lib/math'
 
 export default class District {
@@ -78,6 +79,7 @@ export default class District {
     this.population += block.population
     this.claimed.push(entry)
     block.assignTo(this)
+    this.centroid = null
   }
 
   unclaim(entry){
@@ -90,14 +92,23 @@ export default class District {
     this.claimed.splice(idx, 1)
     this.population -= block.population
     block.assignTo(null)
+    this.centroid = null
     return true
+  }
+
+  getCentroid(){
+    if ( !this.centroid ){
+      this.centroid = getCentroid(this.claimed.map(c => c.block.position))
+    }
+    return this.centroid || this.position
   }
 
   // give another district a block
   giveBlock(other){
     if ( this.neededPopulation() >= 0 ){ return }
     // TODO: optimize this line
-    let mostWanted = _.minBy(this.getRegionBlocks(), entry => distanceSq(entry.block.position, other.position))
+    let otherCenter = other.getCentroid() //other.position
+    let mostWanted = _.minBy(this.getRegionBlocks(), entry => distanceSq(entry.block.position, otherCenter))
 
     // remove from own pool, or claimed
     if ( !this.unclaim(mostWanted) ){

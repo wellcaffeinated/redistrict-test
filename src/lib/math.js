@@ -97,6 +97,17 @@ export function RunningStatistics( initialData = [] ){
   function sum(){ return total }
   function size(){ return n }
 
+  function toObject(){
+    return {
+      mean: mean()
+      , deviation: deviation()
+      , sum: sum()
+      , size: size()
+      , max: max()
+      , min: min()
+    }
+  }
+
   for ( let i = 0, l = initialData.length; i < l; i++ ){
     push(initialData[i])
   }
@@ -110,6 +121,7 @@ export function RunningStatistics( initialData = [] ){
     , max
     , min
     , push
+    , toObject
   }
 }
 

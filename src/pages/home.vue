@@ -9,10 +9,18 @@
         canvas(ref="canvasTop", width="500", height="500", @mousemove="onMouseMove", @mouseleave="seedIndex = -1")
     .column
       pre
+        | == Block Population Statistics ==
+        |
+        template(v-for="(val, key) in blockStatistics")
+          | {{ key }}: {{ val }}
+          |
+      pre
+        | == Districts ==
         | seed movement: {{ seedMovement }}
         | population percent diff: {{ populationPercentDiff }}%
         | number of unchosen blocks: {{ numUnchosenBlocks }}
       pre
+        | == Selected District ==
         | district: {{ seedIndex }}
         | target population: {{ districtInfo.targetPopulation }}
         | population: {{ districtInfo.population }}
@@ -86,7 +94,7 @@ export default {
     , loading: false
     , statusLog: ''
 
-    , useTestData: false
+    , useTestData: true
     , numBlocks: 2000
     , numDistricts: 5
     , useSorting: true
@@ -99,6 +107,7 @@ export default {
     , populationPercentDiff: null
     , districtInfo: {}
     , numUnchosenBlocks: -1
+    , blockStatistics: {}
   })
   , mounted(){
     this.init()
@@ -121,6 +130,7 @@ export default {
       await this.redistricter.restart()
     }
     , showAssignmentRegions(){
+      if (this.working) return
       this.drawRegions()
     }
     , working: _throttle(function(working){
@@ -160,13 +170,18 @@ export default {
 
       if ( this.useTestData ){
         this.log('Initializing test blocks... ')
-        await this.redistricter.useTestData(this.numBlocks | 0)
+        await this.redistricter.useTestBlocks(this.numBlocks | 0)
       } else {
         this.log('Fetching Blocks... ')
-        await this.redistricter.fetchBlocksFromShapefile('/north-carolina/tabblock2010_37_pophu.shp', { limit: 10000 })
+        await this.redistricter.fetchBlocksFromShapefile(
+          '/north-carolina/tabblock2010_37_pophu.shp'
+          , { limit: -1 }
+        )
       }
 
       this.log(true)
+
+      this.blockStatistics = await this.redistricter.getBlockStats()
 
       this.log('Getting block coords... ')
       this.seedCoords = await this.redistricter.getSeedPositions()
