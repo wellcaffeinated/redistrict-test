@@ -22,3 +22,4 @@ yarn-error.log*
 
 src/wasm/target
 public/north-carolina
+public/data/

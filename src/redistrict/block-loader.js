@@ -4,7 +4,6 @@ import {
   , RunningStatistics
 } from '@/lib/math'
 
-// '/north-carolina/tabblock2010_37_pophu.shp'
 export async function fetchBlockData( url, { populationField = 'POP10', limit = -1 } = {} ){
   let statistics = RunningStatistics()
   let source = await shapefile.open(url)

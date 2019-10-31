@@ -174,7 +174,8 @@ export default {
       } else {
         this.log('Fetching Blocks... ')
         await this.redistricter.fetchBlocksFromShapefile(
-          '/north-carolina/tabblock2010_37_pophu.shp'
+          '/data/north-carolina/tabblock2010_37_pophu.shp'
+          // '/data/colorado/tabblock2010_08_pophu.shp'
           , { limit: -1 }
         )
       }
