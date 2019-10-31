@@ -44,7 +44,9 @@
       b-field
         b-switch(v-model="useTestData") Use Test Data
       b-field
-        b-input(v-model="numBlocks", type="number")
+        b-input(v-if="useTestData", v-model="numBlocks", type="number")
+        b-select(v-else, v-model="dataFile")
+          option(v-for="entry in DATAFILES", :value="entry.url") {{ entry.name }}
     b-field(grouped)
       b-field(label="Number of Districts")
         b-input(v-model="numDistricts", type="number")
@@ -83,6 +85,19 @@ import {
 
 const worker = createWorker()
 
+const DATAFILES = [
+  {
+    name: 'north carolina'
+    // , url: 'https://redistricter.s3.us-east-2.amazonaws.com/north-carolina/tabblock2010_37_pophu.shp'
+    , url: '/data/north-carolina/tabblock2010_37_pophu.shp'
+  }
+  , {
+    name: 'colorado'
+    // , url: 'https://redistricter.s3.us-east-2.amazonaws.com/colorado/tabblock2010_08_pophu.shp'
+    , url: '/data/colorado/tabblock2010_08_pophu.shp'
+  }
+]
+
 export default {
   name: 'Home'
   , props: {
@@ -93,6 +108,8 @@ export default {
     working: 0
     , loading: false
     , statusLog: ''
+    , DATAFILES
+    , dataFile: DATAFILES[0].url
 
     , useTestData: true
     , numBlocks: 2000
@@ -174,8 +191,7 @@ export default {
       } else {
         this.log('Fetching Blocks... ')
         await this.redistricter.fetchBlocksFromShapefile(
-          // '/data/north-carolina/tabblock2010_37_pophu.shp'
-          '/data/colorado/tabblock2010_08_pophu.shp'
+          this.dataFile
           , { limit: -1 }
         )
       }
@@ -276,7 +292,7 @@ export default {
       const maxRounds = 100
       let round = 0
       while ((round++) < maxRounds){
-        this.log(`Redistributing blocks (round ${round})...`)
+        this.log(`Redistributing blocks (round ${round})... `)
         await this.redistricter.redistribute()
         await this.getInfo()
         popDiff = this.populationPercentDiff
@@ -332,7 +348,7 @@ export default {
       await this.runUntilStable()
       await this.redistribute()
       let execTime = (Date.now() - start)/1000
-      this.log(`Finished redistricting in ${execTime.toFixed(3)}s`)
+      this.log(`Finished redistricting in ${execTime.toFixed(3)}s\n`)
     }
   }
 }
