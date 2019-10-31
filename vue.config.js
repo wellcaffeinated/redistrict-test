@@ -3,8 +3,16 @@ const WasmPackPlugin = require('@wasm-tool/wasm-pack-plugin')
 
 module.exports = {
   publicPath: process.env.NODE_ENV === 'production'
-    ? '/CHANGEME/'
+    ? '/redistrict-test/'
     : '/'
+  , chainWebpack: config => {
+    if ( process.env.NODE_ENV === 'production' ){
+      config.plugin('copy').tap(options => {
+        options[0][0].ignore.push('data/**/*')
+        return options
+      })
+    }
+  }
   , configureWebpack: {
     resolve: { symlinks: false }
     , node: {

@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-REPO=""
+REPO="redistrict-test"
 
 # abort on errors
 set -e

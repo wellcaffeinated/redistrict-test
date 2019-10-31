@@ -88,13 +88,13 @@ const worker = createWorker()
 const DATAFILES = [
   {
     name: 'north carolina'
-    // , url: 'https://redistricter.s3.us-east-2.amazonaws.com/north-carolina/tabblock2010_37_pophu.shp'
-    , url: '/data/north-carolina/tabblock2010_37_pophu.shp'
+    , url: 'https://redistricter.s3.us-east-2.amazonaws.com/north-carolina/tabblock2010_37_pophu.shp'
+    // , url: '/data/north-carolina/tabblock2010_37_pophu.shp'
   }
   , {
     name: 'colorado'
-    // , url: 'https://redistricter.s3.us-east-2.amazonaws.com/colorado/tabblock2010_08_pophu.shp'
-    , url: '/data/colorado/tabblock2010_08_pophu.shp'
+    , url: 'https://redistricter.s3.us-east-2.amazonaws.com/colorado/tabblock2010_08_pophu.shp'
+    // , url: '/data/colorado/tabblock2010_08_pophu.shp'
   }
 ]
 

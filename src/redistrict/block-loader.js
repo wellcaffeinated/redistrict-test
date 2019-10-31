@@ -6,7 +6,7 @@ import {
 
 export async function fetchBlockData( url, { populationField = 'POP10', limit = -1 } = {} ){
   let statistics = RunningStatistics()
-  let source = await shapefile.open(url, null, { crossorigin: true })
+  let source = await shapefile.open(url)
   let blockData = []
   let result
   while (result = await source.read()){
