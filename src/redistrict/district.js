@@ -42,12 +42,19 @@ export default class District {
 
       let entry = { rank, phi, distance, block }
 
-      if ( this.useSorting ){
-        let idx = _.sortedIndexBy(pool, entry, rank === 0 ? 'phi' : 'distance')
-        pool.splice(idx, 0, entry)
-      } else {
-        pool.push(entry)
-      }
+      // if ( this.useSorting ){
+      //   let idx = _.sortedIndexBy(pool, entry, rank === 0 ? 'phi' : 'distance')
+      //   pool.splice(idx, 0, entry)
+      // } else {
+      //   pool.push(entry)
+      // }
+      pool.push(entry)
+    }
+
+    if ( this.useSorting ){
+      this.pools = this.pools.map((pool, rank) =>
+        _.sortBy(pool, rank === 0 ? 'phi' : 'distance')
+      )
     }
   }
 
