@@ -1,5 +1,6 @@
 
 export function scale(min, max, z){
+  if (min === max){ return 1 }
   return (z - min) / (max - min)
 }
 
