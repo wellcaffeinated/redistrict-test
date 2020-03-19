@@ -1,0 +1,13 @@
+[package]
+name = "data-prep"
+version = "0.1.0"
+authors = ["Jasper <well.caffeinated@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+shapefile = "^0.1"
+rustbreak = "^1.4"
+serde = { version = "1.0", features = ["derive"] }
+indicatif = "^0.14"
