@@ -101,6 +101,7 @@ dependencies = [
  "indicatif",
  "rustbreak",
  "serde",
+ "serde_json",
  "shapefile",
 ]
 
