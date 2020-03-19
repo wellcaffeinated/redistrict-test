@@ -26,3 +26,4 @@ public/data/
 
 target/
 data-prep/_data
+block_data*
