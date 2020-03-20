@@ -28,7 +28,8 @@ export default {
     canvas.width = width
     canvas.height = width * s
     let ctx = canvas.getContext('2d')
-    r.draw(ctx)
+    r.draw_blocks(ctx)
+    r.draw_centers(ctx)
   }
   , watch: {
   }

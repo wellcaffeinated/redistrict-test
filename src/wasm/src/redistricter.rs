@@ -24,23 +24,46 @@ fn scale2d(from : &Rect<f64>, to : &Rect<f64>, p : &Coordinate<f64>) -> Coordina
   }
 }
 
-fn draw_circle(context : &web_sys::CanvasRenderingContext2d, p : Coordinate<f64>, radius: f64, color : &JsValue){
+fn draw_disc(context : &web_sys::CanvasRenderingContext2d, p : Coordinate<f64>, radius: f64, color : &JsValue){
   context.begin_path();
   context.set_fill_style(color);
   context.arc(p.x, p.y, radius, 0., PI2).unwrap();
   context.fill();
 }
 
-#[derive(Debug)]
-struct BlockEntry {
-  coords: Coordinate<f64>,
+fn draw_circle(context : &web_sys::CanvasRenderingContext2d, p : Coordinate<f64>, radius: f64, color : &JsValue){
+  context.begin_path();
+  context.set_stroke_style(color);
+  context.arc(p.x, p.y, radius, 0., PI2).unwrap();
+  context.stroke();
+}
+
+fn get_random_coordinate(b : Rect<f64>) -> Coordinate<f64> {
+  let x = b.width() * rand::random::<f64>() + b.min.x;
+  let y = b.height() * rand::random::<f64>() + b.min.y;
+  Coordinate { x, y }
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone)]
+pub struct BlockEntry {
+  coords: (f64, f64),
   population: u32,
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone)]
+pub struct Center {
+  coords: (f64, f64),
+  weight: f64,
 }
 
 #[wasm_bindgen]
 pub struct Redistricter {
   blocks: Vec<BlockEntry>,
   bounding_rect: Rect<f64>,
+  num_centers: usize,
+  centers: Vec<Center>,
 }
 
 #[wasm_bindgen]
@@ -66,14 +89,29 @@ impl Redistricter {
 
     let first = &blocks[0];
     console::log_4(&"First Entry: ".into(), &first.0.into(), &first.1.into(), &first.2.into());
-
-    Ok(Self {
+    let mut this = Self {
       bounding_rect,
+      num_centers: 5,
+      centers: vec![],
       blocks: blocks.iter().map(|b| BlockEntry {
-        coords: Coordinate { x: b.0, y: b.1 },
+        coords: (b.0, b.1),
         population: b.2,
       }).collect(),
-    })
+    };
+
+    this.reset();
+
+    Ok(this)
+  }
+
+  pub fn reset(&mut self){
+    self.centers = vec![];
+    for _i in 0..self.num_centers {
+      self.centers.push(Center {
+        coords: get_random_coordinate(self.bounding_rect).x_y(),
+        weight: 0.,
+      })
+    }
   }
 
   fn to_canvas_coord(&self, canvas : &web_sys::HtmlCanvasElement, p : Coordinate<f64>) -> Coordinate<f64> {
@@ -97,11 +135,41 @@ impl Redistricter {
     self.bounding_rect.height()
   }
 
-  pub fn draw(&self, context : &web_sys::CanvasRenderingContext2d) {
+  pub fn set_num_centers(&mut self, n : usize){
+    self.num_centers = n;
+    self.reset();
+  }
+
+  pub fn num_blocks(&self) -> usize {
+    self.blocks.len()
+  }
+
+  pub fn get_block(&self, n : usize) -> Option<BlockEntry> {
+    self.blocks.get(n).map(|b| b.clone())
+  }
+
+  pub fn num_centers(&self) -> usize {
+    self.centers.len()
+  }
+
+  pub fn get_centers(&self, n : usize) -> Option<Center> {
+    self.centers.get(n).map(|b| b.clone())
+  }
+
+  pub fn draw_blocks(&self, context : &web_sys::CanvasRenderingContext2d) {
     let canvas = &context.canvas().unwrap();
     self.blocks.iter().for_each(|b| {
-      let coord = self.to_canvas_coord(canvas, b.coords);
-      draw_circle(context, coord, 1., &"#fff".into())
+      let coord = self.to_canvas_coord(canvas, b.coords.into());
+      draw_disc(context, coord, 1., &"#fff".into())
+    });
+  }
+
+  pub fn draw_centers(&self, context : &web_sys::CanvasRenderingContext2d) {
+    let canvas = &context.canvas().unwrap();
+    self.centers.iter().for_each(|c| {
+      let coord = self.to_canvas_coord(canvas, c.coords.into());
+      draw_disc(context, coord, 3., &"#cc0000".into());
+      draw_circle(context, coord, c.weight, &"#cc0000".into());
     });
   }
 }
