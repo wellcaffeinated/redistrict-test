@@ -15,9 +15,10 @@ version = "^0.2"
 features = ["serde-serialize"]
 
 [dependencies]
+wasm-bindgen-futures = "0.4.9"
 # js-sys = "0.3"
 # nalgebra = { version = "0.18", features = ["serde-serialize"] }
-# serde = "^1.0.59"
+serde = { version = "1.0", features = ["derive"] }
 # serde_derive = "^1.0.59"
 # rand = { version = "0.6.1", features = ["wasm-bindgen"] }
 
@@ -35,9 +36,17 @@ console_error_panic_hook = { version = "0.1.1", optional = true }
 wee_alloc = { version = "0.4.2", optional = false }
 
 # for interacting with javascript objects
-# [dependencies.web-sys]
-# version = "0.3.4"
-# features = ['Window', 'Performance', 'PerformanceTiming']
+[dependencies.web-sys]
+version = "0.3.4"
+features = [
+  'Window',
+  'Response',
+  'console',
+  'CanvasRenderingContext2d',
+  'Document',
+  'Element',
+  'HtmlCanvasElement',
+]
 
 [dev-dependencies]
 wasm-bindgen-test = "0.2"
