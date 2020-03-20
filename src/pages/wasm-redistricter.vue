@@ -1,7 +1,8 @@
 <template lang="pug">
 .wrap
   h2.title Wasm Redistricter
-  canvas(ref="canvas", width="500", height="500")
+  .viewport(ref="viewport")
+    canvas(ref="canvas")
 </template>
 
 <script>
@@ -20,8 +21,14 @@ export default {
   })
   , async mounted(){
     const wasm = await app
-    let r = this.redistricter = await wasm.Redistricter.create(this.$refs.canvas, 27)
-    r.draw()
+    let r = this.redistricter = await wasm.Redistricter.create(37)
+    let s = r.height() / r.width()
+    let width = this.$refs.viewport.offsetWidth
+    let canvas = this.$refs.canvas
+    canvas.width = width
+    canvas.height = width * s
+    let ctx = canvas.getContext('2d')
+    r.draw(ctx)
   }
   , watch: {
   }
@@ -31,4 +38,10 @@ export default {
 </script>
 
 <style lang="sass" scoped>
+.wrap
+  padding: 2em
+.viewport
+  width: 100%
+  canvas
+    width: 100%
 </style>

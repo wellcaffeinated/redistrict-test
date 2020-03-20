@@ -1,6 +1,8 @@
-# Evolution Simulator
+# Redistrict Test
 
-This project uses vue-cli. Enjoy!
+## Requirements
+
+* https://proj.org/install.html
 
 ## Project setup
 ```
