@@ -19,6 +19,7 @@ wasm-bindgen-futures = "0.4.9"
 # js-sys = "0.3"
 # nalgebra = { version = "0.18", features = ["serde-serialize"] }
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "^1.0"
 geo = { version = "^0.12", features = [] }
 # serde_derive = "^1.0.59"
 rand = { version = "0.6.1", features = ["wasm-bindgen"] }

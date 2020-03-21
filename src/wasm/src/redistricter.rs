@@ -69,6 +69,35 @@ pub struct Redistricter {
 #[wasm_bindgen]
 impl Redistricter {
 
+  pub fn new( state_code : u32 ) -> Self {
+    use std::fs::File;
+    use std::io::BufReader;
+
+    let path = format!("../../public/block_data_state_{}.json", state_code);
+    let file = File::open(path).unwrap();
+    let reader = BufReader::new(file);
+
+    let blocks : Vec<(f64, f64, u32)> = serde_json::from_reader(reader).unwrap();
+
+    // get the bounding rect for these points
+    let linestring = LineString(blocks.iter().map(|b| Coordinate { x: b.0, y: b.1 }).collect());
+    let bounding_rect = linestring.bounding_rect().unwrap();
+
+    let mut this = Self {
+      bounding_rect,
+      num_centers: 5,
+      centers: vec![],
+      blocks: blocks.iter().map(|b| BlockEntry {
+        coords: (b.0, b.1),
+        population: b.2,
+      }).collect(),
+    };
+
+    this.reset();
+
+    this
+  }
+
   // https://github.com/rustwasm/wasm-bindgen/issues/1858
   pub async fn create( state_code : u32 ) -> Result<Redistricter, JsValue> {
 
@@ -173,35 +202,92 @@ impl Redistricter {
     });
   }
 
-  // pub fn find_assignment(&mut self) {
+  pub fn find_assignment(&mut self) {
+    // i need to convert floats to ints... so multiply by this and round :/
+    let precision = 1_000_000.;
+    let block_offset = self.num_centers();
+
+    use geo::algorithm::euclidean_distance::EuclideanDistance;
+    use mcmf::{GraphBuilder, Vertex, Cost, Capacity};
+    let mut builder = GraphBuilder::new();
+    for (ib, _b) in self.blocks.iter().enumerate() {
+      // every block starts as a source
+      builder.add_edge(Vertex::Source, block_offset + ib, Capacity(1), Cost(0));
+    }
+
+    for (ic, _c) in self.centers.iter().enumerate() {
+      // every center is a sink
+      builder.add_edge(ic, Vertex::Sink, Capacity(1), Cost(0));
+    }
+
+    for (ib, b) in self.blocks.iter().enumerate() {
+      let block_point = Point::from(b.coords);
+      for (ic, c) in self.centers.iter().enumerate() {
+        // path to every center
+        let d : f64 = Point::from(c.coords).euclidean_distance(&block_point);
+        let cost = (d * d - c.weight) * precision;
+        builder.add_edge(block_offset + ib, ic, Capacity(1), Cost(cost as i32));
+      }
+    }
+
+    let (cost, paths) = builder.mcmf();
+
+    dbg!(cost);
+
+    // console::log_1(&cost.into());
+  }
+
+  // pub fn find_assignment(&mut self) -> Vec<i64> {
+  //   use geo::algorithm::euclidean_distance::EuclideanDistance;
   //   // i need to convert floats to ints... so multiply by this and round :/
   //   let precision = 1_000_000.;
   //
-  //   use geo::algorithm::euclidean_distance::EuclideanDistance;
-  //   use mcmf::{GraphBuilder, Vertex, Cost, Capacity};
-  //   let mut builder = GraphBuilder::new();
+  //   let n_blocks = self.num_blocks();
+  //   let n_centers = self.num_centers();
+  //   let max_vertices = n_blocks + n_centers + 2;
+  //   let max_edges = (n_blocks + 2) * n_centers;
+  //
+  //   let mut flow_graph = eb_tech::flow::FlowGraph::new(max_vertices, max_edges);
+  //   let source = 0;
+  //   let sink = 1;
+  //   let cap = 1;
+  //   let center_offset = 2;
+  //   let block_offset = center_offset + n_centers;
+  //
   //   for (ib, _b) in self.blocks.iter().enumerate() {
-  //     // every block starts as a source
-  //     builder.add_edge(Vertex::Source, ib, Capacity(1), Cost(0));
+  //     // every block starts as a source. no cost
+  //     flow_graph.add_edge(source, ib + block_offset, cap, 0, 0);
   //   }
   //
   //   for (ic, _c) in self.centers.iter().enumerate() {
   //     // every center is a sink
-  //     builder.add_edge(ic, Vertex::Sink, Capacity(1), Cost(0));
+  //     flow_graph.add_edge(ic + center_offset, sink, cap, 0, 0);
   //   }
   //
-  //   for (ib, b) in self.blocks.iter().enumerate() {
+  //   for (ib, b) in self.blocks.iter().enumerate().filter(|(i, _b)| *i < n_centers) {
   //     let block_point = Point::from(b.coords);
   //     for (ic, c) in self.centers.iter().enumerate() {
   //       // path to every center
   //       let d : f64 = Point::from(c.coords).euclidean_distance(&block_point);
   //       let cost = (d * d - c.weight) * precision;
-  //       builder.add_edge(ib, ic, Capacity(1), Cost(cost as i32));
+  //       flow_graph.add_edge(ib + block_offset, ic + center_offset, cap, 0, cost as i64);
   //     }
   //   }
   //
-  //   let (cost, paths) = builder.mcmf();
   //
-  //   console::log_1(&cost.into());
+  //   let (cost, max_flow, flows) = flow_graph.mcf(source, sink);
+  //
+  //   flows
   // }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_flows() {
+    let mut r = Redistricter::new(37);
+    r.find_assignment();
+  }
 }

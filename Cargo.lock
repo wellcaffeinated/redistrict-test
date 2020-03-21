@@ -27,6 +27,7 @@ dependencies = [
  "mcmf",
  "rand",
  "serde",
+ "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-futures 0.4.9",
  "wasm-bindgen-test",

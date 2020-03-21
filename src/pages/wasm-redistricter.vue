@@ -30,7 +30,8 @@ export default {
     let ctx = canvas.getContext('2d')
     r.draw_blocks(ctx)
     r.draw_centers(ctx)
-    // r.find_assignment()
+    // let flows = r.find_assignment()
+    // console.log(flows)
   }
   , watch: {
   }
