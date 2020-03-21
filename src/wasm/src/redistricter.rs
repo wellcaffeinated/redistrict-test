@@ -3,7 +3,7 @@ use wasm_bindgen_futures::{JsFuture};
 use wasm_bindgen::JsCast;
 use web_sys::{Response};
 use web_sys::console;
-use geo::{LineString, Coordinate, Rect};
+use geo::{Point, LineString, Coordinate, Rect};
 use geo::algorithm::bounding_rect::BoundingRect;
 use std::f64::consts::PI;
 
@@ -172,4 +172,36 @@ impl Redistricter {
       draw_circle(context, coord, c.weight, &"#cc0000".into());
     });
   }
+
+  // pub fn find_assignment(&mut self) {
+  //   // i need to convert floats to ints... so multiply by this and round :/
+  //   let precision = 1_000_000.;
+  //
+  //   use geo::algorithm::euclidean_distance::EuclideanDistance;
+  //   use mcmf::{GraphBuilder, Vertex, Cost, Capacity};
+  //   let mut builder = GraphBuilder::new();
+  //   for (ib, _b) in self.blocks.iter().enumerate() {
+  //     // every block starts as a source
+  //     builder.add_edge(Vertex::Source, ib, Capacity(1), Cost(0));
+  //   }
+  //
+  //   for (ic, _c) in self.centers.iter().enumerate() {
+  //     // every center is a sink
+  //     builder.add_edge(ic, Vertex::Sink, Capacity(1), Cost(0));
+  //   }
+  //
+  //   for (ib, b) in self.blocks.iter().enumerate() {
+  //     let block_point = Point::from(b.coords);
+  //     for (ic, c) in self.centers.iter().enumerate() {
+  //       // path to every center
+  //       let d : f64 = Point::from(c.coords).euclidean_distance(&block_point);
+  //       let cost = (d * d - c.weight) * precision;
+  //       builder.add_edge(ib, ic, Capacity(1), Cost(cost as i32));
+  //     }
+  //   }
+  //
+  //   let (cost, paths) = builder.mcmf();
+  //
+  //   console::log_1(&cost.into());
+  // }
 }
