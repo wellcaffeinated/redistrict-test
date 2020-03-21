@@ -203,9 +203,9 @@ impl Redistricter {
   }
 
   pub fn find_assignment(&mut self) {
-    // i need to convert floats to ints... so multiply by this and round :/
-    let precision = 1_000_000.;
-    let block_offset = self.num_centers();
+    let n_blocks = self.num_blocks();
+    let n_centers = self.num_centers();
+    let block_offset = n_centers;
 
     use geo::algorithm::euclidean_distance::EuclideanDistance;
     use mcmf::{GraphBuilder, Vertex, Cost, Capacity};
@@ -215,18 +215,27 @@ impl Redistricter {
       builder.add_edge(Vertex::Source, block_offset + ib, Capacity(1), Cost(0));
     }
 
+    let sink_cap = n_blocks as i32; //(n_blocks as f64 / n_centers as f64).ceil() as i32;
+
     for (ic, _c) in self.centers.iter().enumerate() {
       // every center is a sink
-      builder.add_edge(ic, Vertex::Sink, Capacity(1), Cost(0));
+      builder.add_edge(ic, Vertex::Sink, Capacity(sink_cap), Cost(0));
     }
 
     for (ib, b) in self.blocks.iter().enumerate() {
       let block_point = Point::from(b.coords);
-      for (ic, c) in self.centers.iter().enumerate() {
-        // path to every center
+      let costs : Vec<f64> = self.centers.iter().map(|c| {
         let d : f64 = Point::from(c.coords).euclidean_distance(&block_point);
-        let cost = (d * d - c.weight) * precision;
-        builder.add_edge(block_offset + ib, ic, Capacity(1), Cost(cost as i32));
+        d * d - c.weight
+      }).collect();
+
+      // hack for floating points
+      let min_cost = costs.iter().cloned().fold(0./0., f64::min);
+      let costs : Vec<i32> = costs.iter().map(|c| (c / min_cost).ceil() as i32).collect();
+
+      for (ic, _c) in self.centers.iter().enumerate() {
+        // path to every center
+        builder.add_edge(block_offset + ib, ic, Capacity(1), Cost(costs[ic]));
       }
     }
 
@@ -239,8 +248,6 @@ impl Redistricter {
 
   // pub fn find_assignment(&mut self) -> Vec<i64> {
   //   use geo::algorithm::euclidean_distance::EuclideanDistance;
-  //   // i need to convert floats to ints... so multiply by this and round :/
-  //   let precision = 1_000_000.;
   //
   //   let n_blocks = self.num_blocks();
   //   let n_centers = self.num_centers();
@@ -259,23 +266,35 @@ impl Redistricter {
   //     flow_graph.add_edge(source, ib + block_offset, cap, 0, 0);
   //   }
   //
+  //   let sink_cap = n_blocks as i64; //cap * (n_blocks as f64 / n_centers as f64).ceil() as i64;
+  //
   //   for (ic, _c) in self.centers.iter().enumerate() {
   //     // every center is a sink
-  //     flow_graph.add_edge(ic + center_offset, sink, cap, 0, 0);
+  //     flow_graph.add_edge(ic + center_offset, sink, sink_cap, 0, 0);
   //   }
   //
   //   for (ib, b) in self.blocks.iter().enumerate().filter(|(i, _b)| *i < n_centers) {
   //     let block_point = Point::from(b.coords);
-  //     for (ic, c) in self.centers.iter().enumerate() {
-  //       // path to every center
+  //     let costs : Vec<f64> = self.centers.iter().map(|c| {
   //       let d : f64 = Point::from(c.coords).euclidean_distance(&block_point);
-  //       let cost = (d * d - c.weight) * precision;
-  //       flow_graph.add_edge(ib + block_offset, ic + center_offset, cap, 0, cost as i64);
+  //       d * d - c.weight
+  //     }).collect();
+  //
+  //     // hack for floating points
+  //     let min_cost = costs.iter().cloned().fold(0./0., f64::min);
+  //     let costs : Vec<i64> = costs.iter().map(|c| (c / min_cost).ceil() as i64).collect();
+  //
+  //     for (ic, _c) in self.centers.iter().enumerate() {
+  //       // path to every center
+  //       flow_graph.add_edge(ib + block_offset, ic + center_offset, cap, 0, costs[ic]);
   //     }
   //   }
   //
   //
   //   let (cost, max_flow, flows) = flow_graph.mcf(source, sink);
+  //
+  //   dbg!(cost);
+  //   dbg!(max_flow);
   //
   //   flows
   // }
