@@ -208,7 +208,9 @@ impl Redistricter {
   }
 
   pub fn find_assignment(&mut self) -> f32 {
+    // https://github.com/aarroyoc/princeps/tree/master/simplex
     use simplex::{simplex};
+    // https://docs.rs/ndarray/0.12.1/ndarray/doc/ndarray_for_numpy_users/index.html
     use ndarray::*;
 
     let n_blocks = self.num_blocks();
