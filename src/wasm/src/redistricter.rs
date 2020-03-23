@@ -44,6 +44,11 @@ fn get_random_coordinate(b : Rect<f64>) -> Coordinate<f64> {
   Coordinate { x, y }
 }
 
+fn distance_block_to_center(b : &BlockEntry, c: &Center) -> f64 {
+  use geo::algorithm::euclidean_distance::EuclideanDistance;
+  Point::from(c.coords).euclidean_distance(&Point::from(b.coords))
+}
+
 #[wasm_bindgen]
 #[derive(Debug, Clone)]
 pub struct BlockEntry {
@@ -202,78 +207,186 @@ impl Redistricter {
     });
   }
 
-  pub fn find_assignment(&mut self) {
+  pub fn find_assignment(&mut self) -> f32 {
+    use simplex::{simplex};
+    use ndarray::*;
+
     let n_blocks = self.num_blocks();
     let n_centers = self.num_centers();
-    let block_offset = n_centers;
 
-    use geo::algorithm::euclidean_distance::EuclideanDistance;
-    use mcmf::{GraphBuilder, Vertex, Cost, Capacity};
-    let mut builder = GraphBuilder::new();
-    for (ib, _b) in self.blocks.iter().enumerate() {
-      // every block starts as a source
-      builder.add_edge(Vertex::Source, block_offset + ib, Capacity(1), Cost(0));
+    fn get_index(block_index : usize, center_index : usize) -> usize {
+      block_index * center_index
     }
 
-    let sink_cap = n_blocks as i32; //(n_blocks as f64 / n_centers as f64).ceil() as i32;
+    let costs : Array1<f64> = self.blocks.iter()
+      .enumerate()
+      .flat_map(|(bi, b)| self.centers.iter().enumerate().map(
+        move |(ci, c)| {
+          let d = distance_block_to_center(b, c);
+          d * d - c.weight
+        }
+      ))
+      .into_iter().collect();
 
-    for (ic, _c) in self.centers.iter().enumerate() {
-      // every center is a sink
-      builder.add_edge(ic, Vertex::Sink, Capacity(sink_cap), Cost(0));
+    let connections = Array::ones((1, n_centers));
+    let reverse_connections = -Array2::eye(n_centers);
+    let single_constraint = stack(Axis(0), &[connections.view(), reverse_connections.view()]).unwrap();
+
+    let connection_constraints = stack(
+      Axis(1),
+      &vec![single_constraint.view(); n_blocks]
+    ).unwrap();
+    let all_constraints = stack(
+      Axis(1),
+      &[
+        connection_constraints.view(),
+        stack(Axis(0), &[
+          Array::zeros((1, n_centers)).view(),
+          Array2::eye(n_centers).view()]
+        ).unwrap().view()
+      ]
+    ).unwrap();
+
+    let mut caps = vec![(n_blocks / n_centers) as f64; n_centers];
+    for i in 0..(n_blocks % n_centers) {
+      caps[i] += 1.;
     }
+    let requirements = arr1(&caps);
 
-    for (ib, b) in self.blocks.iter().enumerate() {
-      let block_point = Point::from(b.coords);
-      let costs : Vec<f64> = self.centers.iter().map(|c| {
-        let d : f64 = Point::from(c.coords).euclidean_distance(&block_point);
-        d * d - c.weight
-      }).collect();
+    // dbg!(&costs);
+    // dbg!(&all_constraints);
+    // dbg!(&requirements);
 
-      // hack for floating points
-      let min_cost = costs.iter().cloned().fold(0./0., f64::min);
-      let costs : Vec<i32> = costs.iter().map(|c| (c / min_cost).ceil() as i32).collect();
+    let results = simplex(costs, all_constraints, requirements);
 
-      for (ic, _c) in self.centers.iter().enumerate() {
-        // path to every center
-        builder.add_edge(block_offset + ib, ic, Capacity(1), Cost(costs[ic]));
-      }
-    }
+    dbg!(results.shape());
 
-    let (cost, paths) = builder.mcmf();
-
-    dbg!(cost);
-
-    // console::log_1(&cost.into());
+    1.
   }
 
-  // pub fn find_assignment(&mut self) -> Vec<i64> {
-  //   use geo::algorithm::euclidean_distance::EuclideanDistance;
+  // pub fn find_assignment(&mut self) -> f32 {
+  //   use std::collections::HashMap;
+  //   use lp_modeler::dsl::*;
+  //   use lp_modeler::solvers::{SolverTrait, GlpkSolver};
+  //
+  //   #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+  //   struct CenterIndex(usize);
+  //   #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+  //   struct BlockIndex(usize);
   //
   //   let n_blocks = self.num_blocks();
   //   let n_centers = self.num_centers();
-  //   let max_vertices = n_blocks + n_centers + 2;
-  //   let max_edges = (n_blocks + 2) * n_centers;
   //
-  //   let mut flow_graph = eb_tech::flow::FlowGraph::new(max_vertices, max_edges);
-  //   let source = 0;
-  //   let sink = 1;
-  //   let cap = 1;
-  //   let center_offset = 2;
-  //   let block_offset = center_offset + n_centers;
+  //   // set up the costs
+  //   let costs: HashMap<(BlockIndex, CenterIndex), f32> = self.blocks.iter()
+  //     .enumerate()
+  //     .flat_map(|(bi, b)| self.centers.iter().enumerate().map(
+  //       move |(ci, c)| {
+  //         let d = distance_block_to_center(b, c);
+  //         ((BlockIndex(bi), CenterIndex(ci)), (d * d - c.weight) as f32)
+  //       }
+  //     ))
+  //     .into_iter().collect();
   //
-  //   for (ib, _b) in self.blocks.iter().enumerate() {
-  //     // every block starts as a source. no cost
-  //     flow_graph.add_edge(source, ib + block_offset, cap, 0, 0);
+  //   // Define Problem
+  //   let mut problem = LpProblem::new("Assignment", LpObjective::Minimize);
+  //
+  //   // Define Variables
+  //   let vars: HashMap<(BlockIndex, CenterIndex), LpBinary> =
+  //     self.blocks.iter()
+  //       .enumerate()
+  //       .flat_map(|(bi, _b)| self.centers.iter().enumerate().map(
+  //         move |(ci, _c)| {
+  //           let key = (BlockIndex(bi), CenterIndex(ci));
+  //           let value = LpBinary::new(&format!("{}_{}", bi, ci));
+  //           (key, value)
+  //         }))
+  //       .collect();
+  //
+  //   // Define Objective Function
+  //   let obj_vec: Vec<LpExpression> = {
+  //     vars.iter().map( |(&(bi, ci), bin)| {
+  //       let &coef = costs.get(&(bi, ci)).unwrap();
+  //       coef * bin
+  //     } )
+  //   }.collect();
+  //   problem += obj_vec.sum();
+  //
+  //
+  //   // let sink_cap = n_blocks as i32; //(n_blocks as f64 / n_centers as f64).ceil() as i32;
+  //   let mut caps = vec![(n_blocks / n_centers) as i32; n_centers];
+  //   for i in 0..(n_blocks % n_centers) {
+  //     caps[i] += 1;
   //   }
   //
-  //   let sink_cap = n_blocks as i64; //cap * (n_blocks as f64 / n_centers as f64).ceil() as i64;
+  //   // Define Constraints
+  //   // - constraint 1: Each block must be assigned to exactly one center
+  //   for bi in 0..n_blocks {
+  //     problem += sum(
+  //       &(0..n_centers).into_iter().collect(),
+  //       |&ci| vars.get(&(BlockIndex(bi), CenterIndex(ci))).unwrap()
+  //     ).equal(1);
+  //   }
+  //
+  //   // get the capacities of centers
+  //   let mut caps = vec![(n_blocks / n_centers) as i32; n_centers];
+  //   for i in 0..(n_blocks % n_centers) {
+  //     caps[i] += 1;
+  //   }
+  //
+  //   // - constraint 2: Each center must be assigned to exactly cap[ic] blocks
+  //   for ci in 0..n_centers {
+  //     problem += sum(
+  //       &(0..n_blocks).into_iter().collect(),
+  //       |&bi| vars.get(&(BlockIndex(bi), CenterIndex(ci))).unwrap()
+  //     ).equal(caps[ci]);
+  //   }
+  //
+  //   // Run Solver
+  //   let solver = GlpkSolver::new();
+  //   let result = solver.run(&problem);
+  //
+  //   assert!(result.is_ok(), result.unwrap_err());
+  //
+  //   let (status, solution) = result.unwrap();
+  //   let mut total_cost = 0f32;
+  //   for (&(bi, ci), var) in &vars{
+  //     let cost = costs.get(&(bi, ci)).unwrap();
+  //     let var_value = solution.get(&var.name).unwrap();
+  //
+  //     total_cost += cost * var_value;
+  //   }
+  //
+  //   dbg!(status);
+  //
+  //   total_cost
+  // }
+
+  // pub fn find_assignment2(&mut self) {
+  //   let n_blocks = self.num_blocks();
+  //   let n_centers = self.num_centers();
+  //   let block_offset = n_centers;
+  //
+  //   use geo::algorithm::euclidean_distance::EuclideanDistance;
+  //   use mcmf::{GraphBuilder, Vertex, Cost, Capacity};
+  //   let mut builder = GraphBuilder::new();
+  //   for (ib, _b) in self.blocks.iter().enumerate() {
+  //     // every block starts as a source
+  //     builder.add_edge(Vertex::Source, block_offset + ib, Capacity(1), Cost(0));
+  //   }
+  //
+  //   // let sink_cap = n_blocks as i32; //(n_blocks as f64 / n_centers as f64).ceil() as i32;
+  //   let mut caps = vec![(n_blocks / n_centers) as i32; n_centers];
+  //   for i in 0..(n_blocks % n_centers) {
+  //     caps[i] += 1;
+  //   }
   //
   //   for (ic, _c) in self.centers.iter().enumerate() {
   //     // every center is a sink
-  //     flow_graph.add_edge(ic + center_offset, sink, sink_cap, 0, 0);
+  //     builder.add_edge(ic, Vertex::Sink, Capacity(caps[ic]), Cost(0));
   //   }
   //
-  //   for (ib, b) in self.blocks.iter().enumerate().filter(|(i, _b)| *i < n_centers) {
+  //   for (ib, b) in self.blocks.iter().enumerate() {
   //     let block_point = Point::from(b.coords);
   //     let costs : Vec<f64> = self.centers.iter().map(|c| {
   //       let d : f64 = Point::from(c.coords).euclidean_distance(&block_point);
@@ -282,21 +395,24 @@ impl Redistricter {
   //
   //     // hack for floating points
   //     let min_cost = costs.iter().cloned().fold(0./0., f64::min);
-  //     let costs : Vec<i64> = costs.iter().map(|c| (c / min_cost).ceil() as i64).collect();
+  //     let costs : Vec<i32> = costs.iter().map(|c| (c / min_cost).ceil() as i32).collect();
   //
   //     for (ic, _c) in self.centers.iter().enumerate() {
   //       // path to every center
-  //       flow_graph.add_edge(ib + block_offset, ic + center_offset, cap, 0, costs[ic]);
+  //       builder.add_edge(block_offset + ib, ic, Capacity(1), Cost(costs[ic]));
   //     }
   //   }
   //
+  //   let (cost, paths) = builder.mcmf();
   //
-  //   let (cost, max_flow, flows) = flow_graph.mcf(source, sink);
+  //   let total_flow = paths.iter().fold(0, |t, p| {
+  //     t + p.amount()
+  //   });
+  //
+  //   dbg!(n_blocks);
+  //   dbg!(total_flow);
   //
   //   dbg!(cost);
-  //   dbg!(max_flow);
-  //
-  //   flows
   // }
 }
 
@@ -306,7 +422,29 @@ mod tests {
 
   #[test]
   fn test_flows() {
+    use ndarray::{arr1, arr2};
+
+    let objective = arr1(&[1., 2., 3., 4.]);
+    let constraints = arr2(&[
+      [1., 1., 1., 1.],
+      [-1., 1., 1., 1.],
+    ]);
+    let requirements = arr1(&[30., 600.]);
+
+    dbg!(&objective);
+    dbg!(&constraints);
+    dbg!(&requirements);
+    let result = simplex::simplex(objective, constraints, requirements);
+    println!("{:?}", result);
+
     let mut r = Redistricter::new(37);
-    r.find_assignment();
+    let result = r.find_assignment();
+    // dbg!(result);
   }
+
+  // #[test]
+  // fn test_flows2() {
+  //   let mut r = Redistricter::new(37);
+  //   r.find_assignment2();
+  // }
 }
