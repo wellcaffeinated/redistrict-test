@@ -207,63 +207,65 @@ impl Redistricter {
     });
   }
 
-  pub fn find_assignment(&mut self) -> f32 {
-    // https://github.com/aarroyoc/princeps/tree/master/simplex
-    use simplex::{simplex};
+  pub fn find_assignment(&mut self) -> Vec<f64> {
+    use rulp::solver::*;
+    use rulp::lp::{Lp, Optimization};
+    use rulinalg::matrix::{Matrix};
     // https://docs.rs/ndarray/0.12.1/ndarray/doc/ndarray_for_numpy_users/index.html
     use ndarray::*;
 
     let n_blocks = self.num_blocks();
     let n_centers = self.num_centers();
 
-    fn get_index(block_index : usize, center_index : usize) -> usize {
-      block_index * center_index
+    let sq_distances : Vec<f64> = self.blocks.iter()
+      .flat_map(|b| self.centers.iter().map(
+        // TODO: this should account for population
+        move |c| distance_block_to_center(b, c).powi(2)
+      )).collect();
+
+    // w_i + z_j + s_ij <= d^2
+    // n_rows = n_centers * n_blocks
+    // n_columns = n_centers + n_blocks + n_rows
+    let mut constraints = Array::<f64, _>::zeros((0, 0));
+    let n_rows = n_centers * n_blocks;
+    let n_columns = n_centers + n_blocks + n_rows;
+    // for every center...
+    for i in 0..n_centers {
+      // create a chunk for the w_i variables which is a series of ones along the i column
+      let mut w_i = Array::zeros((n_blocks, n_centers));
+      w_i.column_mut(i).fill(1.);
+      // create an identity matrix for the z_j variables
+      let z_j = Array::eye(n_blocks); // Identity matrix
+      // stack them together horizontally, then stack them vertically benieth the previous ones
+      constraints = stack![Axis(0), constraints, stack![Axis(1), w_i, z_j]];
     }
+    // now create an identity for the slack variables s_ij
+    constraints = stack![Axis(1), constraints, Array::eye(n_rows)];
 
-    let costs : Array1<f64> = self.blocks.iter()
-      .enumerate()
-      .flat_map(|(bi, b)| self.centers.iter().enumerate().map(
-        move |(ci, c)| {
-          let d = distance_block_to_center(b, c);
-          d * d - c.weight
-        }
-      ))
-      .into_iter().collect();
-
-    let connections = Array::ones((1, n_centers));
-    let reverse_connections = -Array2::eye(n_centers);
-    let single_constraint = stack(Axis(0), &[connections.view(), reverse_connections.view()]).unwrap();
-
-    let connection_constraints = stack(
-      Axis(1),
-      &vec![single_constraint.view(); n_blocks]
-    ).unwrap();
-    let all_constraints = stack(
-      Axis(1),
-      &[
-        connection_constraints.view(),
-        stack(Axis(0), &[
-          Array::zeros((1, n_centers)).view(),
-          Array2::eye(n_centers).view()]
-        ).unwrap().view()
-      ]
-    ).unwrap();
-
-    let mut caps = vec![(n_blocks / n_centers) as f64; n_centers];
+    // how much each district can hold
+    // TODO: this should account for population
+    let mut capacities = vec![(n_blocks / n_centers) as f64; n_centers];
     for i in 0..(n_blocks % n_centers) {
-      caps[i] += 1.;
+      capacities[i] += 1.;
     }
-    let requirements = arr1(&caps);
 
-    // dbg!(&costs);
-    // dbg!(&all_constraints);
-    // dbg!(&requirements);
+    // let simplex = SimplexSolver::new(Lp {
+    //   A: Matrix::new(n_rows, n_columns, constraints.iter().cloned().collect::<Vec<f64>>()),
+    //   b: sq_distances,
+    //   c: stack![Axis(0), capacities, Array::zeros(n_rows)].to_vec(),
+    //   optimization: Optimization::Max,
+    //   vars: vec![],
+    //   num_artificial_vars: n_rows,
+    // });
 
-    let results = simplex(costs, all_constraints, requirements);
-
-    dbg!(results.shape());
-
-    1.
+    // let solution = simplex.solve();
+    // // the first n_centers values are the weights
+    // let weights = solution.values.map(|v| v.iter().take(n_centers).cloned().collect());
+    //
+    // dbg!(solution.status);
+    //
+    // weights.unwrap()
+    vec![]
   }
 
   // pub fn find_assignment(&mut self) -> f32 {
@@ -421,32 +423,242 @@ impl Redistricter {
 #[cfg(test)]
 mod tests {
   use super::*;
+  // use ndarray::*;
+  // use ndarray::{Array1, Array2};
+  //
+  // use num_traits::Float;
+  //
+  // #[derive(PartialEq, Debug)]
+  // pub enum SimplexResultStatus {
+  //     OPTIMAL
+  // }
+  //
+  // #[derive(Debug)]
+  // pub struct SimplexResult<T> {
+  //     objective: T,
+  //     status: SimplexResultStatus,
+  //     variables: Array1<T>,
+  // }
+  //
+  // type SimplexTable = Array2<std::convert::From<i32>>;
+  //
+  // fn initial_table<T: Float + std::convert::From<i32>>
+  //     (objective: &Array1<T>, constraints: &Array2<T>, requirements: &Array1<T>)
+  //     -> Array2<T>
+  //     {
+  //     let n_variables = objective.len();
+  //     // Margen izquierdo, valor de cada variable en la restriccion, columna de requerimientos, variables artificiales
+  //     let dimension_j = 1 + n_variables + 1 + constraints.len_of(Axis(0));
+  //     // Cada restriccion y el renglon z
+  //     let dimension_i = constraints.len_of(Axis(0)) + 1;
+  //     let mut table = Array2::<T>::zeros((dimension_i, dimension_j));
+  //     // Renglon Z
+  //     table[[0, 0]] = 1i32.into();
+  //     for j in 0..objective.len() {
+  //         table[[0, j + 1]] = objective[j];
+  //         table[[0, j + 1]] = table[[0, j + 1]] * (-1).into();
+  //     }
+  //     // Restricciones
+  //     for i in 0..constraints.len_of(Axis(0)) {
+  //         for j in 0..constraints.len_of(Axis(1)) {
+  //             table[[i + 1, j + 1]] = constraints[[i, j]];
+  //         }
+  //     }
+  //     // Requerimientos
+  //     for i in 0..requirements.len() {
+  //         table[[i + 1, dimension_j - 1]] = requirements[i];
+  //     }
+  //     table
+  // }
+  //
+  // fn pivot_point<T: Float + std::convert::From<i32>>(table: &Array2<T>) -> Option<[usize; 2]> {
+  //     let mut out_var = None;
+  //     let mut out_var_max = 0.into();
+  //     let mut in_var = None;
+  //     let mut in_var_min = None;
+  //
+  //     for j in 1..(table.len_of(Axis(1)) - 1) {
+  //         if table[[0, j]] > out_var_max {
+  //             out_var_max = table[[0, j]];
+  //             out_var = Some(j);
+  //         }
+  //     }
+  //
+  //     if let Some(j) = out_var {
+  //         let req = table.len_of(Axis(1)) - 1;
+  //         for i in 1..table.len_of(Axis(0)) {
+  //             if let Some(m) = in_var_min {
+  //                 if table[[i, req]] / table[[i, j]] < m && table[[i, req]] / table[[i, j]] > 0.into()
+  //                 {
+  //                     in_var_min = Some(table[[i, req]] / table[[i, j]]);
+  //                     in_var = Some(i);
+  //                 }
+  //             } else {
+  //                 in_var_min = Some(table[[i, req]] / table[[i, j]]);
+  //                 in_var = Some(i);
+  //             }
+  //         }
+  //     }
+  //     match (out_var, in_var) {
+  //         (Some(j), Some(i)) => Some([i, j]),
+  //         _ => None,
+  //     }
+  // }
+  //
+  // fn gauss<T>(pivot: [usize; 2], table: &mut Array2<T>)
+  // where
+  //     T: Float
+  //         + std::fmt::Debug
+  //         + std::ops::MulAssign
+  //         + std::ops::AddAssign
+  //         + std::ops::DivAssign
+  //         + ndarray::ScalarOperand,
+  // {
+  //     for i in 0..table.len_of(Axis(0)) {
+  //         if i != pivot[0] {
+  //             // Aplicar GAUSS a la fila
+  //             let pivot_n = table[pivot];
+  //             let make_zero = table[[i, pivot[1]]];
+  //             {
+  //                 let mut row_pivot = table.row_mut(pivot[0]);
+  //                 row_pivot /= pivot_n;
+  //             }
+  //             // Multiplicar la fila de make_zero por pivot_n
+  //             let mut row_pivot = table.row(pivot[0]).to_owned();
+  //             let mut row_make_zero = table.row_mut(i);
+  //             row_make_zero *= pivot_n;
+  //             row_pivot *= -make_zero;
+  //             row_make_zero += &row_pivot;
+  //         }
+  //     }
+  //     let pivot_n = table[[0, 0]];
+  //     let mut row_pivot = table.row_mut(0);
+  //     row_pivot /= pivot_n;
+  // }
+  //
+  // // Comprobar si existe solucion, si es finita, soluciones degeneradas
+  //
+  // #[allow(dead_code)]
+  // fn check_optimus() {}
+  //
+  // pub fn simplex<T: Float + std::ops::MulAssign + std::ops::AddAssign + std::ops::DivAssign + ndarray::ScalarOperand + std::convert::From<i32> + std::fmt::Debug>
+  //     (objective: Array1<T>, constraints: Array2<T>, requirements: Array1<T>) -> SimplexResult<T>{
+  //     let mut table = initial_table(&objective, &constraints, &requirements);
+  //     while let Some(pivot) = pivot_point(&table) {
+  //         gauss(pivot,&mut table);
+  //     }
+  //     dbg!(&table);
+  //     let last_position = table.len_of(Axis(1)) - 1 ;
+  //     let rows = table.len_of(Axis(0)) - 1;
+  //     let mut variables = Array1::<T>::zeros(rows);
+  //     for r in 1..rows {
+  //         variables[r-1] = table[[r, last_position]];
+  //     }
+  //     SimplexResult {
+  //         objective: table[[0, last_position]],
+  //         status: SimplexResultStatus::OPTIMAL,
+  //         variables
+  //     }
+  //
+  // }
 
   #[test]
-  fn test_flows() {
+  fn test_simplex() {
     use ndarray::{arr1, arr2};
 
-    let objective = arr1(&[1., 2., 3., 4.]);
+    let objective = arr1(&[1., 2., 4., 8., 1., 2., 2., 10.]);
     let constraints = arr2(&[
-      [1., 1., 1., 1.],
-      [-1., 1., 1., 1.],
+      [1., 1., 0., 0., 0., 0., 0., 0.,    1., 0., 0., 0., 0., 0.],
+      [0., 0., 1., 1., 0., 0., 0., 0.,    0., 1., 0., 0., 0., 0.],
+      [0., 0., 0., 0., 1., 1., 0., 0.,    0., 0., 1., 0., 0., 0.],
+      [0., 0., 0., 0., 0., 0., 1., 1.,    0., 0., 0., 1., 0., 0.],
+      [-1., 0., -1., 0., -1., 0., -1., 0.,0., 0., 0., 0., 1., 0.],
+      [0., -1., 0., -1., 0., -1., 0., -1.,0., 0., 0., 0., 0., 1.]
     ]);
-    let requirements = arr1(&[30., 600.]);
+    let requirements = arr1(&[1., 1., 1., 1., -2., -2.]);
+
+    // let objective = arr1(&[2., 2., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0.]);
+    // let constraints = arr2(&[
+    //   [1., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0.],
+    //   [1., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0.],
+    //   [1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0.],
+    //   [1., 0., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0.],
+    //   [0., 1., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0.],
+    //   [0., 1., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0.],
+    //   [0., 1., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0.],
+    //   [0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1.]
+    // ]);
+    // let requirements = arr1(&[0.1, 2., 4., 8., 2., 9., 2., 10.]);
 
     dbg!(&objective);
     dbg!(&constraints);
     dbg!(&requirements);
     let result = simplex::simplex(objective, constraints, requirements);
     println!("{:?}", result);
-
-    let mut r = Redistricter::new(37);
-    let result = r.find_assignment();
-    // dbg!(result);
   }
 
-  // #[test]
-  // fn test_flows2() {
-  //   let mut r = Redistricter::new(37);
-  //   r.find_assignment2();
-  // }
+  #[test]
+  fn test_rulp(){
+    use rulp::solver::*;
+    use rulp::lp::{Lp, Optimization};
+    use rulinalg::matrix::{Matrix};
+
+    // let A = Matrix::new(6, 8, vec![
+    //   1.,  1.,  0.,  0.,  0.,  0.,  0.,  0.,
+    //   0.,  0.,  1.,  1.,  0.,  0.,  0.,  0.,
+    //   0.,  0.,  0.,  0.,  1.,  1.,  0.,  0.,
+    //   0.,  0.,  0.,  0.,  0.,  0.,  1.,  1.,
+    //   -1., 0., -1.,  0., -1.,  0., -1.,  0.,
+    //   0., -1.,  0., -1.,  0., -1.,  0., -1.
+    // ]);
+    // let A = Matrix::new(8, 6, vec![
+    //   1.,  0.,  0.,  0., -1.,  0.,
+    //   1.,  0.,  0.,  0.,  0., -1.,
+    //   0.,  1.,  0.,  0., -1.,  0.,
+    //   0.,  1.,  0.,  0.,  0., -1.,
+    //   0.,  0.,  1.,  0., -1.,  0.,
+    //   0.,  0.,  1.,  0.,  0., -1.,
+    //   0.,  0.,  0.,  1., -1.,  0.,
+    //   0.,  0.,  0.,  1.,  0., -1.
+    // ]);
+    // let b = vec![1., 1., 1., 1., -2., -2.];
+    // let c = vec![1., 2., 4., 8., 2., 3., 2., 10.];
+
+    // objective
+    // w1 + w2 + z1 + z2 + z3 + z4
+    let c = vec![2., 2., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0.];
+    let A = Matrix::new(8, 6 + 8, vec![
+      1., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0.,
+      1., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0.,
+      1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0.,
+      1., 0., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0.,
+      0., 1., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0.,
+      0., 1., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0.,
+      0., 1., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0.,
+      0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1.
+    ]);
+    let b = vec![0.1, 2., 4., 8., 2., 9., 2., 10.];
+
+    let simplex = SimplexSolver::new(Lp {
+      A,
+      b,
+      c,
+      optimization: Optimization::Max,
+      vars: vec![],
+      num_artificial_vars: 8,
+    });
+    let solution = simplex.solve();
+    dbg!(solution);
+  }
+
+  #[test]
+  fn test_flows() {
+    // use ndarray::*;
+    // let mut r = Array::<f64, _>::zeros((200_000, 200_000));
+    // r.slice_mut(s![300, 300]).fill(1.);
+    // dbg!(r.slice(s![300, 300]));
+    // let mut r = Redistricter::new(37);
+    // let weights = r.find_assignment();
+    // dbg!(weights);
+  }
 }

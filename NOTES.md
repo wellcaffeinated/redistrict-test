@@ -27,6 +27,9 @@ May be possible to write my own solver for min-cost flow using:
 * https://docs.rs/petgraph/0.5.0/petgraph/algo/fn.dijkstra.html
 * https://crates.io/keywords/graph
 * https://www.cs.upc.edu/~erodri/webpage/cps/theory/lp/network/slides.pdf
+* NS https://www.ibm.com/developerworks/community/forums/html/topic?id=d7d49692-c2c8-4ff3-8f71-c375bf5ed9bb
+* NS trees? https://ocw.mit.edu/courses/sloan-school-of-management/15-082j-network-optimization-fall-2010/lecture-notes/MIT15_082JF10_lec16.pdf
+* https://github.com/splintersu/NetworkSimplex/blob/master/network_simplex_solver.cpp
 
 # References
 
