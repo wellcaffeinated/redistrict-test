@@ -15,7 +15,7 @@
     "bulma": "^0.7.1",
     "chroma-js": "^2.0.4",
     "concaveman": "^1.1.1",
-    "lodash": "^4.17.10",
+    "lodash": "^4.17.19",
     "moment": "^2.22.2",
     "moment-duration-format": "^2.2.2",
     "shapefile": "^0.6.6",
