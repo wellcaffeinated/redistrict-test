@@ -24,8 +24,9 @@ pub fn browser_debug() {
   console_error_panic_hook::set_once();
 }
 
-mod eb_tech;
+// mod eb_tech;
 mod stats;
 pub use stats::*;
 mod redistricter;
 pub use redistricter::*;
+// pub mod simplex;

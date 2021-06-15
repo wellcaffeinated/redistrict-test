@@ -74,34 +74,34 @@ pub struct Redistricter {
 #[wasm_bindgen]
 impl Redistricter {
 
-  pub fn new( state_code : u32 ) -> Self {
-    use std::fs::File;
-    use std::io::BufReader;
-
-    let path = format!("../../public/block_data_state_{}.json", state_code);
-    let file = File::open(path).unwrap();
-    let reader = BufReader::new(file);
-
-    let blocks : Vec<(f64, f64, u32)> = serde_json::from_reader(reader).unwrap();
-
-    // get the bounding rect for these points
-    let linestring = LineString(blocks.iter().map(|b| Coordinate { x: b.0, y: b.1 }).collect());
-    let bounding_rect = linestring.bounding_rect().unwrap();
-
-    let mut this = Self {
-      bounding_rect,
-      num_centers: 5,
-      centers: vec![],
-      blocks: blocks.iter().map(|b| BlockEntry {
-        coords: (b.0, b.1),
-        population: b.2,
-      }).collect(),
-    };
-
-    this.reset();
-
-    this
-  }
+  // pub fn new( state_code : u32 ) -> Self {
+  //   use std::fs::File;
+  //   use std::io::BufReader;
+  //
+  //   let path = format!("../../public/block_data_state_{}.json", state_code);
+  //   let file = File::open(path).unwrap();
+  //   let reader = BufReader::new(file);
+  //
+  //   let blocks : Vec<(f64, f64, u32)> = serde_json::from_reader(reader).unwrap();
+  //
+  //   // get the bounding rect for these points
+  //   let linestring = LineString(blocks.iter().map(|b| Coordinate { x: b.0, y: b.1 }).collect());
+  //   let bounding_rect = linestring.bounding_rect().unwrap();
+  //
+  //   let mut this = Self {
+  //     bounding_rect,
+  //     num_centers: 5,
+  //     centers: vec![],
+  //     blocks: blocks.iter().map(|b| BlockEntry {
+  //       coords: (b.0, b.1),
+  //       population: b.2,
+  //     }).collect(),
+  //   };
+  //
+  //   this.reset();
+  //
+  //   this
+  // }
 
   // https://github.com/rustwasm/wasm-bindgen/issues/1858
   pub async fn create( state_code : u32 ) -> Result<Redistricter, JsValue> {
@@ -207,66 +207,66 @@ impl Redistricter {
     });
   }
 
-  pub fn find_assignment(&mut self) -> Vec<f64> {
-    use rulp::solver::*;
-    use rulp::lp::{Lp, Optimization};
-    use rulinalg::matrix::{Matrix};
-    // https://docs.rs/ndarray/0.12.1/ndarray/doc/ndarray_for_numpy_users/index.html
-    use ndarray::*;
-
-    let n_blocks = self.num_blocks();
-    let n_centers = self.num_centers();
-
-    let sq_distances : Vec<f64> = self.blocks.iter()
-      .flat_map(|b| self.centers.iter().map(
-        // TODO: this should account for population
-        move |c| distance_block_to_center(b, c).powi(2)
-      )).collect();
-
-    // w_i + z_j + s_ij <= d^2
-    // n_rows = n_centers * n_blocks
-    // n_columns = n_centers + n_blocks + n_rows
-    let mut constraints = Array::<f64, _>::zeros((0, 0));
-    let n_rows = n_centers * n_blocks;
-    let n_columns = n_centers + n_blocks + n_rows;
-    // for every center...
-    for i in 0..n_centers {
-      // create a chunk for the w_i variables which is a series of ones along the i column
-      let mut w_i = Array::zeros((n_blocks, n_centers));
-      w_i.column_mut(i).fill(1.);
-      // create an identity matrix for the z_j variables
-      let z_j = Array::eye(n_blocks); // Identity matrix
-      // stack them together horizontally, then stack them vertically benieth the previous ones
-      constraints = stack![Axis(0), constraints, stack![Axis(1), w_i, z_j]];
-    }
-    // now create an identity for the slack variables s_ij
-    constraints = stack![Axis(1), constraints, Array::eye(n_rows)];
-
-    // how much each district can hold
-    // TODO: this should account for population
-    let mut capacities = vec![(n_blocks / n_centers) as f64; n_centers];
-    for i in 0..(n_blocks % n_centers) {
-      capacities[i] += 1.;
-    }
-
-    // let simplex = SimplexSolver::new(Lp {
-    //   A: Matrix::new(n_rows, n_columns, constraints.iter().cloned().collect::<Vec<f64>>()),
-    //   b: sq_distances,
-    //   c: stack![Axis(0), capacities, Array::zeros(n_rows)].to_vec(),
-    //   optimization: Optimization::Max,
-    //   vars: vec![],
-    //   num_artificial_vars: n_rows,
-    // });
-
-    // let solution = simplex.solve();
-    // // the first n_centers values are the weights
-    // let weights = solution.values.map(|v| v.iter().take(n_centers).cloned().collect());
-    //
-    // dbg!(solution.status);
-    //
-    // weights.unwrap()
-    vec![]
-  }
+  // pub fn find_assignment(&mut self) -> Vec<f64> {
+  //   use rulp::solver::*;
+  //   use rulp::lp::{Lp, Optimization};
+  //   use rulinalg::matrix::{Matrix};
+  //   // https://docs.rs/ndarray/0.12.1/ndarray/doc/ndarray_for_numpy_users/index.html
+  //   use ndarray::*;
+  //
+  //   let n_blocks = self.num_blocks();
+  //   let n_centers = self.num_centers();
+  //
+  //   let sq_distances : Vec<f64> = self.blocks.iter()
+  //     .flat_map(|b| self.centers.iter().map(
+  //       // TODO: this should account for population
+  //       move |c| distance_block_to_center(b, c).powi(2)
+  //     )).collect();
+  //
+  //   // w_i + z_j + s_ij <= d^2
+  //   // n_rows = n_centers * n_blocks
+  //   // n_columns = n_centers + n_blocks + n_rows
+  //   let mut constraints = Array::<f64, _>::zeros((0, 0));
+  //   let n_rows = n_centers * n_blocks;
+  //   let n_columns = n_centers + n_blocks + n_rows;
+  //   // for every center...
+  //   for i in 0..n_centers {
+  //     // create a chunk for the w_i variables which is a series of ones along the i column
+  //     let mut w_i = Array::zeros((n_blocks, n_centers));
+  //     w_i.column_mut(i).fill(1.);
+  //     // create an identity matrix for the z_j variables
+  //     let z_j = Array::eye(n_blocks); // Identity matrix
+  //     // stack them together horizontally, then stack them vertically benieth the previous ones
+  //     constraints = stack![Axis(0), constraints, stack![Axis(1), w_i, z_j]];
+  //   }
+  //   // now create an identity for the slack variables s_ij
+  //   constraints = stack![Axis(1), constraints, Array::eye(n_rows)];
+  //
+  //   // how much each district can hold
+  //   // TODO: this should account for population
+  //   let mut capacities = vec![(n_blocks / n_centers) as f64; n_centers];
+  //   for i in 0..(n_blocks % n_centers) {
+  //     capacities[i] += 1.;
+  //   }
+  //
+  //   // let simplex = SimplexSolver::new(Lp {
+  //   //   A: Matrix::new(n_rows, n_columns, constraints.iter().cloned().collect::<Vec<f64>>()),
+  //   //   b: sq_distances,
+  //   //   c: stack![Axis(0), capacities, Array::zeros(n_rows)].to_vec(),
+  //   //   optimization: Optimization::Max,
+  //   //   vars: vec![],
+  //   //   num_artificial_vars: n_rows,
+  //   // });
+  //
+  //   // let solution = simplex.solve();
+  //   // // the first n_centers values are the weights
+  //   // let weights = solution.values.map(|v| v.iter().take(n_centers).cloned().collect());
+  //   //
+  //   // dbg!(solution.status);
+  //   //
+  //   // weights.unwrap()
+  //   vec![]
+  // }
 
   // pub fn find_assignment(&mut self) -> f32 {
   //   use std::collections::HashMap;
@@ -562,103 +562,103 @@ mod tests {
   //
   // }
 
-  #[test]
-  fn test_simplex() {
-    use ndarray::{arr1, arr2};
+  // #[test]
+  // fn test_simplex() {
+  //   use ndarray::{arr1, arr2};
+  //
+  //   let objective = arr1(&[1., 2., 4., 8., 1., 2., 2., 10.]);
+  //   let constraints = arr2(&[
+  //     [1., 1., 0., 0., 0., 0., 0., 0.,    1., 0., 0., 0., 0., 0.],
+  //     [0., 0., 1., 1., 0., 0., 0., 0.,    0., 1., 0., 0., 0., 0.],
+  //     [0., 0., 0., 0., 1., 1., 0., 0.,    0., 0., 1., 0., 0., 0.],
+  //     [0., 0., 0., 0., 0., 0., 1., 1.,    0., 0., 0., 1., 0., 0.],
+  //     [-1., 0., -1., 0., -1., 0., -1., 0.,0., 0., 0., 0., 1., 0.],
+  //     [0., -1., 0., -1., 0., -1., 0., -1.,0., 0., 0., 0., 0., 1.]
+  //   ]);
+  //   let requirements = arr1(&[1., 1., 1., 1., -2., -2.]);
+  //
+  //   // let objective = arr1(&[2., 2., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0.]);
+  //   // let constraints = arr2(&[
+  //   //   [1., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0.],
+  //   //   [1., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0.],
+  //   //   [1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0.],
+  //   //   [1., 0., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0.],
+  //   //   [0., 1., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0.],
+  //   //   [0., 1., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0.],
+  //   //   [0., 1., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0.],
+  //   //   [0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1.]
+  //   // ]);
+  //   // let requirements = arr1(&[0.1, 2., 4., 8., 2., 9., 2., 10.]);
+  //
+  //   dbg!(&objective);
+  //   dbg!(&constraints);
+  //   dbg!(&requirements);
+  //   let result = simplex::simplex(objective, constraints, requirements);
+  //   println!("{:?}", result);
+  // }
 
-    let objective = arr1(&[1., 2., 4., 8., 1., 2., 2., 10.]);
-    let constraints = arr2(&[
-      [1., 1., 0., 0., 0., 0., 0., 0.,    1., 0., 0., 0., 0., 0.],
-      [0., 0., 1., 1., 0., 0., 0., 0.,    0., 1., 0., 0., 0., 0.],
-      [0., 0., 0., 0., 1., 1., 0., 0.,    0., 0., 1., 0., 0., 0.],
-      [0., 0., 0., 0., 0., 0., 1., 1.,    0., 0., 0., 1., 0., 0.],
-      [-1., 0., -1., 0., -1., 0., -1., 0.,0., 0., 0., 0., 1., 0.],
-      [0., -1., 0., -1., 0., -1., 0., -1.,0., 0., 0., 0., 0., 1.]
-    ]);
-    let requirements = arr1(&[1., 1., 1., 1., -2., -2.]);
-
-    // let objective = arr1(&[2., 2., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0.]);
-    // let constraints = arr2(&[
-    //   [1., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0.],
-    //   [1., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0.],
-    //   [1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0.],
-    //   [1., 0., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0.],
-    //   [0., 1., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0.],
-    //   [0., 1., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0.],
-    //   [0., 1., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0.],
-    //   [0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1.]
-    // ]);
-    // let requirements = arr1(&[0.1, 2., 4., 8., 2., 9., 2., 10.]);
-
-    dbg!(&objective);
-    dbg!(&constraints);
-    dbg!(&requirements);
-    let result = simplex::simplex(objective, constraints, requirements);
-    println!("{:?}", result);
-  }
-
-  #[test]
-  fn test_rulp(){
-    use rulp::solver::*;
-    use rulp::lp::{Lp, Optimization};
-    use rulinalg::matrix::{Matrix};
-
-    // let A = Matrix::new(6, 8, vec![
-    //   1.,  1.,  0.,  0.,  0.,  0.,  0.,  0.,
-    //   0.,  0.,  1.,  1.,  0.,  0.,  0.,  0.,
-    //   0.,  0.,  0.,  0.,  1.,  1.,  0.,  0.,
-    //   0.,  0.,  0.,  0.,  0.,  0.,  1.,  1.,
-    //   -1., 0., -1.,  0., -1.,  0., -1.,  0.,
-    //   0., -1.,  0., -1.,  0., -1.,  0., -1.
-    // ]);
-    // let A = Matrix::new(8, 6, vec![
-    //   1.,  0.,  0.,  0., -1.,  0.,
-    //   1.,  0.,  0.,  0.,  0., -1.,
-    //   0.,  1.,  0.,  0., -1.,  0.,
-    //   0.,  1.,  0.,  0.,  0., -1.,
-    //   0.,  0.,  1.,  0., -1.,  0.,
-    //   0.,  0.,  1.,  0.,  0., -1.,
-    //   0.,  0.,  0.,  1., -1.,  0.,
-    //   0.,  0.,  0.,  1.,  0., -1.
-    // ]);
-    // let b = vec![1., 1., 1., 1., -2., -2.];
-    // let c = vec![1., 2., 4., 8., 2., 3., 2., 10.];
-
-    // objective
-    // w1 + w2 + z1 + z2 + z3 + z4
-    let c = vec![2., 2., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0.];
-    let A = Matrix::new(8, 6 + 8, vec![
-      1., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0.,
-      1., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0.,
-      1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0.,
-      1., 0., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0.,
-      0., 1., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0.,
-      0., 1., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0.,
-      0., 1., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0.,
-      0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1.
-    ]);
-    let b = vec![0.1, 2., 4., 8., 2., 9., 2., 10.];
-
-    let simplex = SimplexSolver::new(Lp {
-      A,
-      b,
-      c,
-      optimization: Optimization::Max,
-      vars: vec![],
-      num_artificial_vars: 8,
-    });
-    let solution = simplex.solve();
-    dbg!(solution);
-  }
-
-  #[test]
-  fn test_flows() {
-    // use ndarray::*;
-    // let mut r = Array::<f64, _>::zeros((200_000, 200_000));
-    // r.slice_mut(s![300, 300]).fill(1.);
-    // dbg!(r.slice(s![300, 300]));
-    // let mut r = Redistricter::new(37);
-    // let weights = r.find_assignment();
-    // dbg!(weights);
-  }
+  // #[test]
+  // fn test_rulp(){
+  //   use rulp::solver::*;
+  //   use rulp::lp::{Lp, Optimization};
+  //   use rulinalg::matrix::{Matrix};
+  //
+  //   // let A = Matrix::new(6, 8, vec![
+  //   //   1.,  1.,  0.,  0.,  0.,  0.,  0.,  0.,
+  //   //   0.,  0.,  1.,  1.,  0.,  0.,  0.,  0.,
+  //   //   0.,  0.,  0.,  0.,  1.,  1.,  0.,  0.,
+  //   //   0.,  0.,  0.,  0.,  0.,  0.,  1.,  1.,
+  //   //   -1., 0., -1.,  0., -1.,  0., -1.,  0.,
+  //   //   0., -1.,  0., -1.,  0., -1.,  0., -1.
+  //   // ]);
+  //   // let A = Matrix::new(8, 6, vec![
+  //   //   1.,  0.,  0.,  0., -1.,  0.,
+  //   //   1.,  0.,  0.,  0.,  0., -1.,
+  //   //   0.,  1.,  0.,  0., -1.,  0.,
+  //   //   0.,  1.,  0.,  0.,  0., -1.,
+  //   //   0.,  0.,  1.,  0., -1.,  0.,
+  //   //   0.,  0.,  1.,  0.,  0., -1.,
+  //   //   0.,  0.,  0.,  1., -1.,  0.,
+  //   //   0.,  0.,  0.,  1.,  0., -1.
+  //   // ]);
+  //   // let b = vec![1., 1., 1., 1., -2., -2.];
+  //   // let c = vec![1., 2., 4., 8., 2., 3., 2., 10.];
+  //
+  //   // objective
+  //   // w1 + w2 + z1 + z2 + z3 + z4
+  //   let c = vec![2., 2., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0.];
+  //   let A = Matrix::new(8, 6 + 8, vec![
+  //     1., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0.,
+  //     1., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0.,
+  //     1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0.,
+  //     1., 0., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 0.,
+  //     0., 1., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0., 0.,
+  //     0., 1., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0., 0.,
+  //     0., 1., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1., 0.,
+  //     0., 1., 0., 0., 0., 1., 0., 0., 0., 0., 0., 0., 0., 1.
+  //   ]);
+  //   let b = vec![0.1, 2., 4., 8., 2., 9., 2., 10.];
+  //
+  //   let simplex = SimplexSolver::new(Lp {
+  //     A,
+  //     b,
+  //     c,
+  //     optimization: Optimization::Max,
+  //     vars: vec![],
+  //     num_artificial_vars: 8,
+  //   });
+  //   let solution = simplex.solve();
+  //   dbg!(solution);
+  // }
+  //
+  // #[test]
+  // fn test_flows() {
+  //   // use ndarray::*;
+  //   // let mut r = Array::<f64, _>::zeros((200_000, 200_000));
+  //   // r.slice_mut(s![300, 300]).fill(1.);
+  //   // dbg!(r.slice(s![300, 300]));
+  //   // let mut r = Redistricter::new(37);
+  //   // let weights = r.find_assignment();
+  //   // dbg!(weights);
+  // }
 }

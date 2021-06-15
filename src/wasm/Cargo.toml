@@ -24,11 +24,11 @@ geo = { version = "^0.12", features = [] }
 # serde_derive = "^1.0.59"
 rand = { version = "0.6.1", features = ["wasm-bindgen"] }
 # mcmf = "2.0"
-simplex = "0.1"
-ndarray = "0.12.1"
-num-traits = "0.2"
-rulp = "0.1"
-rulinalg = "0.4"
+# simplex = "0.1"
+# ndarray = "0.12.1"
+# num-traits = "0.2"
+# rulp = "0.1"
+# rulinalg = "0.4"
 
 # The `console_error_panic_hook` crate provides better debugging of panics by
 # logging them with `console.error`. This is great for development, but requires

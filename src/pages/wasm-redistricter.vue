@@ -44,7 +44,7 @@ export default {
 .wrap
   padding: 2em
 .viewport
-  width: 100%
+  width: 100vw
   canvas
     width: 100%
 </style>

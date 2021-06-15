@@ -1,2 +1,2 @@
 [workspace]
-members = ["data-prep", "src/wasm"]
+members = ["data-prep", "server", "src/wasm"]
